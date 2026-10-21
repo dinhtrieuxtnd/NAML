@@ -31,6 +31,12 @@ UNK_TOKEN = "<UNK>"
 PAD_TOKEN_IDX = 0
 UNK_TOKEN_IDX = 1
 
+# Columns of predictions.csv, besides IMPRESSION_ID_COLUMN / USER_ID_COLUMN.
+PREDICTION_NEWS_ID_COLUMN = "news_id"
+PREDICTION_LABEL_COLUMN = "label"
+SCORE_COLUMN = "score"
+RANK_COLUMN = "rank"
+
 # Batch keys, besides HISTORY_COLUMN / CANDIDATES_COLUMN / LABELS_COLUMN.
 NEWS_ROWS_KEY = "news_rows"
 NEWS_TOKENS_KEY = "news_tokens"

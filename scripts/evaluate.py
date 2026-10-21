@@ -1,6 +1,7 @@
-"""Evaluate a checkpoint saved by scripts/train.py.
+"""Evaluate a checkpoint saved by scripts/train.py on the test split.
 
-Usage: python -m scripts.evaluate --checkpoint outputs/<run>/checkpoints/epoch_<i> --split test
+Usage: python -m scripts.evaluate --checkpoint outputs/<run>/checkpoints/best
+Writes outputs/<run>/evaluation_best/{metrics.json, predictions.csv}.
 """
 
 import argparse
@@ -11,13 +12,13 @@ from src.utils.run import setup_logging
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Evaluate a saved checkpoint")
-    parser.add_argument("--checkpoint", type=Path, required=True)
-    parser.add_argument("--split", choices=["val", "test"], required=True)
+    parser = argparse.ArgumentParser(description="Evaluate a saved checkpoint on the test split")
+    parser.add_argument("--checkpoint", type=Path, required=True,
+                        help="Checkpoint directory, usually outputs/<run>/checkpoints/best")
     args = parser.parse_args()
 
     setup_logging(None)
-    run_evaluation(args.checkpoint, args.split)
+    run_evaluation(args.checkpoint)
 
 
 if __name__ == "__main__":

@@ -245,8 +245,8 @@ def _train(config: TrainConfig, run_dir: Path, resume_from: Path | None) -> None
             # Chỉ đánh giá val để theo dõi; test chạy riêng bằng scripts/evaluate.py trên checkpoint đã chọn.
             # fork_rng: eval không làm lệch RNG của train, nên resume cho kết quả giống chạy liên tục.
             with torch.random.fork_rng(devices=cuda_devices):
-                metrics = evaluate(model, accelerator, val_dataset, news,
-                                   data_cfg.eval_batch_size, data_cfg.num_workers)
+                metrics, _ = evaluate(model, accelerator, val_dataset, news,
+                                      data_cfg.eval_batch_size, data_cfg.num_workers)
             lr = _current_lr(optimizer)
             value = metrics[monitor]
             is_best = (state["best_value"] is None

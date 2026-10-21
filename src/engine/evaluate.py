@@ -1,9 +1,10 @@
 import logging
 from pathlib import Path
 
+import pandas as pd
 import torch
 from accelerate import Accelerator
-from accelerate.utils import SAFE_WEIGHTS_NAME, load_checkpoint_in_model
+from accelerate.utils import SAFE_WEIGHTS_NAME, gather_object, load_checkpoint_in_model
 from einops import repeat
 from torch.utils.data import DataLoader
 from torchmetrics import MetricCollection
@@ -17,11 +18,17 @@ from src.data.constants import (
     CANDIDATES_COLUMN,
     HISTORY_COLUMN,
     HISTORY_MASK_KEY,
+    IMPRESSION_ID_COLUMN,
     INDEXES_KEY,
     LABELS_COLUMN,
     NEWS_CATEGORY_KEY,
     NEWS_ROWS_KEY,
     NEWS_TOKENS_KEY,
+    PREDICTION_LABEL_COLUMN,
+    PREDICTION_NEWS_ID_COLUMN,
+    RANK_COLUMN,
+    SCORE_COLUMN,
+    USER_ID_COLUMN,
 )
 from src.data.dataset import EvalDataset, NewsDataset, load_split_samples
 from src.data.news import NewsFeatures
@@ -30,9 +37,19 @@ from src.models.naml import NAML
 from src.models.registry import build_model
 from src.utils.config import load_config
 from src.utils.io import save_json
-from src.utils.run import CONFIG_FILE
+from src.utils.run import (
+    CONFIG_FILE,
+    EVALUATION_DIR_TEMPLATE,
+    METRICS_FILE,
+    PREDICTIONS_FILE,
+)
 
 logger = logging.getLogger(__name__)
+
+
+# Cột tạm của predictions thô: vị trí impression trong dataset và vị trí candidate trong impression.
+_SAMPLE_INDEX = "sample_index"
+_POSITION = "position"
 
 
 @torch.no_grad()
@@ -43,8 +60,13 @@ def evaluate(
     news: NewsFeatures,
     batch_size: int,
     num_workers: int,
-) -> dict[str, float]:
-    """Encodes every news the split needs once, then ranks the candidates of each impression."""
+    collect_predictions: bool = False,
+) -> tuple[dict[str, float], pd.DataFrame | None]:
+    """Encodes every news the split needs once, then ranks the candidates of each impression.
+
+    Returns the metrics and, with collect_predictions, one row per candidate: its impression's
+    index in `dataset`, its position among the impression's candidates and its score.
+    """
     model.eval()
     unwrapped = accelerator.unwrap_model(model)
     disable_progress = None if accelerator.is_main_process else True
@@ -73,6 +95,7 @@ def evaluate(
 
     eval_loader = accelerator.prepare(DataLoader(
         dataset, batch_size=batch_size, collate_fn=EvalCollator(), num_workers=num_workers))
+    predictions = []
     for batch in tqdm(eval_loader, desc="score impressions", leave=False, disable=disable_progress):
         # history: [B, N] -> [B, N, D]; user: [B, D]
         user = unwrapped.encode_user(news_table[batch[HISTORY_COLUMN]], batch[HISTORY_MASK_KEY])
@@ -82,39 +105,81 @@ def evaluate(
         # indexes: [B] -> [B, C_max]
         indexes = repeat(batch[INDEXES_KEY], "b -> b c", c=scores.shape[1])
         # [B, C_max] -> [num_valid_candidates]
-        preds, labels, indexes = scores[mask], batch[LABELS_COLUMN][mask], indexes[mask]
+        preds, labels, valid_indexes = scores[mask], batch[LABELS_COLUMN][mask], indexes[mask]
         auroc.update(preds, labels)
-        retrieval.update(preds, labels, indexes=indexes)
+        retrieval.update(preds, labels, indexes=valid_indexes)
+        if collect_predictions:
+            # positions: [C_max] -> [B, C_max] -> [num_valid_candidates]
+            positions = repeat(torch.arange(scores.shape[1], device=scores.device),
+                               "c -> b c", b=scores.shape[0])[mask]
+            predictions.append(pd.DataFrame({
+                _SAMPLE_INDEX: valid_indexes.cpu().numpy(),
+                _POSITION: positions.cpu().numpy(),
+                SCORE_COLUMN: preds.float().cpu().numpy(),
+            }))
 
     metrics = {"auc": auroc.compute(), **retrieval.compute()}
-    return {name: value.item() for name, value in metrics.items()}
+    metrics = {name: value.item() for name, value in metrics.items()}
+    if not collect_predictions:
+        return metrics, None
+    # Nhiều process: gom về một chỗ; impression bị lặp do chia đều batch giữa các process thì bỏ.
+    predictions = pd.concat(gather_object(predictions), ignore_index=True)
+    return metrics, predictions.drop_duplicates([_SAMPLE_INDEX, _POSITION], ignore_index=True)
 
 
-def run_evaluation(checkpoint_dir: Path, split: str) -> dict[str, float]:
-    """Evaluates a checkpoint saved by run_training on one split.
+def _to_prediction_table(raw: pd.DataFrame, samples: list[dict]) -> pd.DataFrame:
+    """Raw predictions of evaluate() -> predictions.csv rows, sorted by impression then rank."""
+    raw = raw.sort_values([_SAMPLE_INDEX, _POSITION], ignore_index=True)
+    rows = [samples[i] for i in raw[_SAMPLE_INDEX]]
+    positions = raw[_POSITION].tolist()
+    table = pd.DataFrame({
+        IMPRESSION_ID_COLUMN: [sample[IMPRESSION_ID_COLUMN] for sample in rows],
+        USER_ID_COLUMN: [sample[USER_ID_COLUMN] for sample in rows],
+        PREDICTION_NEWS_ID_COLUMN: [
+            sample[CANDIDATES_COLUMN][position] for sample, position in zip(rows, positions)],
+        PREDICTION_LABEL_COLUMN: [
+            sample[LABELS_COLUMN][position] for sample, position in zip(rows, positions)],
+        SCORE_COLUMN: raw[SCORE_COLUMN],
+    })
+    # rank 1 = điểm cao nhất trong impression; hoà điểm thì candidate đứng trước xếp trước.
+    table[RANK_COLUMN] = table.groupby(raw[_SAMPLE_INDEX])[SCORE_COLUMN].rank(
+        method="first", ascending=False).astype(int)
+    table[_SAMPLE_INDEX] = raw[_SAMPLE_INDEX]
+    table = table.sort_values([_SAMPLE_INDEX, RANK_COLUMN], ignore_index=True)
+    return table.drop(columns=_SAMPLE_INDEX)
 
-    Checkpoints live in <run_dir>/checkpoints/<name>, so the run's resolved config is read
-    from <run_dir>/config.yaml. Metrics go to <checkpoint_dir>/metrics_<split>.json.
+
+def run_evaluation(checkpoint_dir: Path) -> dict[str, float]:
+    """Evaluates a checkpoint saved by run_training on the test split.
+
+    The config is read from <checkpoint_dir>/config.yaml. metrics.json and predictions.csv go
+    to <run_dir>/evaluation_<checkpoint name>/ (checkpoints live in <run_dir>/checkpoints/).
     """
-    run_dir = checkpoint_dir.parent.parent
-    config = TrainConfig.model_validate(load_config(run_dir / CONFIG_FILE))
+    config = TrainConfig.model_validate(load_config(checkpoint_dir / CONFIG_FILE))
     data_cfg = config.data
+    output_dir = checkpoint_dir.parent.parent / EVALUATION_DIR_TEMPLATE.format(
+        checkpoint=checkpoint_dir.name)
     accelerator = Accelerator(mixed_precision=config.trainer.mixed_precision)
 
     news = NewsFeatures(data_cfg.processed_dir, data_cfg.text_views)
-    dataset = EvalDataset(
-        load_split_samples(data_cfg.processed_dir, split)[:data_cfg.max_eval_impressions],
-        news, data_cfg.history_len)
+    samples = load_split_samples(data_cfg.processed_dir, "test")[:data_cfg.max_eval_impressions]
+    dataset = EvalDataset(samples, news, data_cfg.history_len)
     model = build_model(config.model, news.num_categories, data_cfg.text_views, news.embedding)
     # Chỉ cần trọng số model (accelerator.save_state lưu ở SAFE_WEIGHTS_NAME), không nạp
     # optimizer/scheduler/RNG của checkpoint.
     load_checkpoint_in_model(model, str(checkpoint_dir / SAFE_WEIGHTS_NAME), strict=True)
     model = accelerator.prepare(model)
-    logger.info("Loaded %s, %s impressions=%d", checkpoint_dir, split, len(dataset))
+    logger.info("Loaded %s, test impressions=%d", checkpoint_dir, len(dataset))
 
-    metrics = evaluate(model, accelerator, dataset, news,
-                       data_cfg.eval_batch_size, data_cfg.num_workers)
+    metrics, raw_predictions = evaluate(
+        model, accelerator, dataset, news, data_cfg.eval_batch_size, data_cfg.num_workers,
+        collect_predictions=True)
+    logger.info("test: %s", ", ".join(f"{name}={value:.4f}" for name, value in metrics.items()))
     if accelerator.is_main_process:
-        save_json(metrics, checkpoint_dir / f"metrics_{split}.json")
-    logger.info("%s: %s", split, ", ".join(f"{name}={value:.4f}" for name, value in metrics.items()))
+        output_dir.mkdir(exist_ok=True)
+        save_json(metrics, output_dir / METRICS_FILE)
+        predictions = _to_prediction_table(raw_predictions, samples)
+        predictions.to_csv(output_dir / PREDICTIONS_FILE, index=False)
+        logger.info("Saved %s and %s (%d rows) to %s",
+                    METRICS_FILE, PREDICTIONS_FILE, len(predictions), output_dir)
     return metrics
