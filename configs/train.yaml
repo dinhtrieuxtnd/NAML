@@ -1,3 +1,7 @@
+run:
+  name: naml_phobert
+  output_root: outputs
+
 data:
   processed_dir: data/processed/real_data_v1
   text_views: [title, sapo, tags]
@@ -32,5 +36,3 @@ trainer:
   log_every: 50
   max_train_steps: null
   save_every_steps: 1000
-  output_root: outputs
-  run_name: naml_phobert

@@ -6,7 +6,6 @@ Usage:
 """
 
 import argparse
-import logging
 from pathlib import Path
 
 from src.engine.config import TrainConfig
@@ -20,8 +19,6 @@ def main() -> None:
     parser.add_argument("--resume", type=Path, help="Checkpoint directory to continue from")
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.WARNING, format="%(asctime)s | %(levelname)s | %(message)s")
-    logging.getLogger("src").setLevel(logging.INFO)
     config = TrainConfig.model_validate(load_config(args.config))
     run_training(config, resume_from=args.resume)
 

@@ -1,5 +1,7 @@
-preprocessing:
+run:
   name: real_data_v1
+  output_root: data/processed
+  overwrite: false
 
 input:
   train_behaviors: data/raw/behaviors/train_behaviors.csv
@@ -9,10 +11,6 @@ input:
 
 tokenizer:
   name: vinai/phobert-base-v2
-
-output:
-  directory: data/processed/real_data_v1
-  overwrite: false
 
 text:
   lowercase: true

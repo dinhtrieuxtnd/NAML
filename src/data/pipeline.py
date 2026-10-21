@@ -1,8 +1,5 @@
-import datetime
 import logging
-import platform
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 
@@ -10,12 +7,9 @@ from src.data.config import PreprocessConfig
 from src.data.constants import (
     ARTIFACTS_DIR,
     CATEGORY_DICT_FILE,
-    CONFIG_FILE,
     INDEX_MATRIX_FILE,
-    LOG_FILE,
     NEWS_CATEGORY_COLUMN,
     NEWS_CATEGORY_MAPPING_FILE,
-    RUN_INFO_FILE,
     SAMPLES_FILE_TEMPLATE,
     SPLITS,
     STATISTICS_FILE,
@@ -29,12 +23,14 @@ from src.data.preprocessing import (
     build_token_matrix,
     build_train_samples,
 )
-from src.utils.config import save_config
 from src.utils.io import save_json, save_pickle
+from src.utils.run import CONFIG_FILE, LOG_FILE_TEMPLATE, RUN_INFO_FILE, start_run
 
 logger = logging.getLogger(__name__)
 
-MANAGED_ROOT_FILES = (CONFIG_FILE, LOG_FILE, RUN_INFO_FILE, STATISTICS_FILE)
+STAGE = "preprocess"
+MANAGED_ROOT_FILES = (
+    CONFIG_FILE, LOG_FILE_TEMPLATE.format(stage=STAGE), RUN_INFO_FILE, STATISTICS_FILE)
 MANAGED_ARTIFACT_FILES = (
     *(SAMPLES_FILE_TEMPLATE.format(split=split) for split in SPLITS),
     INDEX_MATRIX_FILE,
@@ -46,7 +42,7 @@ MANAGED_ARTIFACT_FILES = (
 def prepare_output_dir(output_dir: Path, overwrite: bool) -> Path:
     if output_dir.exists() and not overwrite:
         raise FileExistsError(
-            f"Output directory {output_dir} already exists. Set output.overwrite: true to replace it.")
+            f"Output directory {output_dir} already exists. Set run.overwrite: true to replace it.")
     artifacts_dir = output_dir / ARTIFACTS_DIR
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 
@@ -61,47 +57,10 @@ def prepare_output_dir(output_dir: Path, overwrite: bool) -> Path:
 
 
 def run_preprocessing(config: PreprocessConfig) -> None:
-    output_dir = prepare_output_dir(config.output.directory, overwrite=config.output.overwrite)
-    # Thư viện bên ngoài chỉ log từ WARNING, logger của project ("src.*") log từ INFO.
-    logging.basicConfig(
-        level=logging.WARNING,
-        format="%(asctime)s | %(levelname)s | %(message)s",
-        handlers=[
-            logging.FileHandler(output_dir / LOG_FILE, encoding="utf-8"),
-            logging.StreamHandler(),
-        ],
-        force=True,
-    )
-    logging.getLogger("src").setLevel(logging.INFO)
-    save_config(config.model_dump(mode="json"), output_dir / CONFIG_FILE)
-
-    start_time = datetime.datetime.now()
-    run_info: dict[str, Any] = {
-        "preprocess_name": config.preprocessing.name,
-        "status": "running",
-        "start_time": start_time.isoformat(),
-        "python_version": platform.python_version(),
-        "platform": platform.platform(),
-    }
-    save_json(run_info, output_dir / RUN_INFO_FILE)
-
-    # Ghi lại trạng thái failed rồi raise tiếp, không nuốt lỗi.
-    try:
+    output_dir = prepare_output_dir(
+        config.run.output_root / config.run.name, overwrite=config.run.overwrite)
+    with start_run(STAGE, output_dir, config, resume=False):
         _preprocess(config, output_dir)
-        run_info["status"] = "completed"
-        logger.info("Preprocessing completed")
-    except BaseException as e:
-        run_info.update({
-            "status": "failed",
-            "error_type": type(e).__name__,
-            "error_message": str(e)})
-        logger.exception("Preprocessing failed: %s", e)
-        raise
-    finally:
-        end_time = datetime.datetime.now()
-        run_info["end_time"] = end_time.isoformat()
-        run_info["duration_seconds"] = (end_time - start_time).total_seconds()
-        save_json(run_info, output_dir / RUN_INFO_FILE)
 
 
 def _preprocess(config: PreprocessConfig, output_dir: Path) -> None:

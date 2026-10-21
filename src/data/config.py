@@ -1,12 +1,11 @@
-from pathlib import Path
-
 from pydantic import DirectoryPath, FilePath, NonNegativeInt, PositiveInt
 
-from src.utils.config import StrictModel
+from src.utils.config import RunConfig, StrictModel
 
 
-class PreprocessingConfig(StrictModel):
-    name: str
+class PreprocessRunConfig(RunConfig):
+    # Thư mục output_root/name đã tồn tại thì báo lỗi, trừ khi overwrite: true.
+    overwrite: bool
 
 
 class InputConfig(StrictModel):
@@ -18,11 +17,6 @@ class InputConfig(StrictModel):
 
 class TokenizerConfig(StrictModel):
     name: str
-
-
-class OutputConfig(StrictModel):
-    directory: Path
-    overwrite: bool
 
 
 class TextMaxLengthConfig(StrictModel):
@@ -37,10 +31,9 @@ class TextConfig(StrictModel):
 
 
 class PreprocessConfig(StrictModel):
-    preprocessing: PreprocessingConfig
+    run: PreprocessRunConfig
     input: InputConfig
     tokenizer: TokenizerConfig
-    output: OutputConfig
     text: TextConfig
 
 

@@ -4,29 +4,32 @@ from pathlib import Path
 
 import torch
 from accelerate import Accelerator
-from accelerate.utils import DataLoaderConfiguration, ProjectConfiguration, set_seed
+from accelerate.utils import DataLoaderConfiguration, set_seed
 from torch.utils.data import DataLoader
 
 from src.data.collator import TrainCollator
 from src.data.constants import (
     CANDIDATES_COLUMN,
-    CHECKPOINTS_DIR,
-    CONFIG_FILE,
-    EPOCH_CHECKPOINT_TEMPLATE,
     HISTORY_COLUMN,
     HISTORY_MASK_KEY,
-    LATEST_CHECKPOINT,
     NEWS_CATEGORY_KEY,
     NEWS_TOKENS_KEY,
-    TRAINING_STATE_FILE,
 )
 from src.data.dataset import EvalDataset, TrainDataset, load_split_samples
 from src.data.news import NewsFeatures
 from src.engine.config import TrainConfig
 from src.engine.evaluate import evaluate
 from src.models.registry import build_loss, build_model
-from src.utils.config import load_config, save_config
+from src.utils.config import load_config
 from src.utils.io import load_json, save_json
+from src.utils.run import (
+    CHECKPOINTS_DIR,
+    CONFIG_FILE,
+    EPOCH_CHECKPOINT_TEMPLATE,
+    LATEST_CHECKPOINT,
+    TRAINING_STATE_FILE,
+    start_run,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,32 +73,32 @@ def _check_resume_config(config: TrainConfig, run_dir: Path) -> None:
 def run_training(config: TrainConfig, resume_from: Path | None = None) -> None:
     """Trains from scratch, or continues from a checkpoint saved by a previous call.
 
-    A resumed run keeps writing to the checkpoint's run directory.
+    A new run goes to run.output_root/<run.name>_<timestamp>; a resumed run keeps writing to
+    the checkpoint's run directory.
     """
-    trainer_cfg, data_cfg = config.trainer, config.data
     if resume_from is None:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        run_dir = trainer_cfg.output_root / f"{trainer_cfg.run_name}_{timestamp}"
+        run_dir = config.run.output_root / f"{config.run.name}_{timestamp}"
     else:
         run_dir = resume_from.parent.parent
+    with start_run("train", run_dir, config, resume=resume_from is not None):
+        _train(config, run_dir, resume_from)
+
+
+def _train(config: TrainConfig, run_dir: Path, resume_from: Path | None) -> None:
+    trainer_cfg, data_cfg = config.trainer, config.data
+    if resume_from is not None:
         _check_resume_config(config, run_dir)
     checkpoints_dir = run_dir / CHECKPOINTS_DIR
 
     accelerator = Accelerator(
         mixed_precision=trainer_cfg.mixed_precision,
         gradient_accumulation_steps=trainer_cfg.gradient_accumulation_steps,
-        log_with="tensorboard",
-        project_config=ProjectConfiguration(project_dir=str(run_dir)),
         # Thứ tự shuffle chỉ phụ thuộc (seed, epoch) để resume giữa epoch bỏ qua đúng các batch đã train.
         dataloader_config=DataLoaderConfiguration(
             use_seedable_sampler=True, data_seed=trainer_cfg.seed),
     )
     set_seed(trainer_cfg.seed)
-    if accelerator.is_main_process:
-        run_dir.mkdir(parents=True, exist_ok=resume_from is not None)
-        save_config(config.model_dump(mode="json"), run_dir / CONFIG_FILE)
-    accelerator.init_trackers("tensorboard")
-    logger.info("Run directory: %s", run_dir)
 
     news = NewsFeatures(data_cfg.processed_dir, data_cfg.text_views, config.model.pretrained_name)
     train_dataset = TrainDataset(
@@ -168,7 +171,6 @@ def run_training(config: TrainConfig, resume_from: Path | None = None) -> None:
             if accelerator.sync_gradients:
                 global_step += 1
                 if global_step % trainer_cfg.log_every == 0:
-                    accelerator.log({"train/loss": loss.item(), "train/epoch": epoch}, step=global_step)
                     logger.info("epoch %d step %d loss %.4f", epoch, global_step, loss.item())
                 if global_step == trainer_cfg.max_train_steps:
                     reached_max_steps = True
@@ -183,7 +185,6 @@ def run_training(config: TrainConfig, resume_from: Path | None = None) -> None:
         with torch.random.fork_rng(devices=cuda_devices):
             metrics = evaluate(model, accelerator, val_dataset, news,
                                data_cfg.eval_batch_size, data_cfg.num_workers)
-        accelerator.log({f"val/{name}": value for name, value in metrics.items()}, step=global_step)
         logger.info("epoch %d step %d val: %s", epoch, global_step,
                     ", ".join(f"{name}={value:.4f}" for name, value in metrics.items()))
         if reached_max_steps:

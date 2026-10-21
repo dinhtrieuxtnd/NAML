@@ -22,7 +22,7 @@ def save_pickle(obj: Any, path: str | Path) -> None:
         pickle.dump(obj, f)
 
 
-def save_json(data: dict, path: str | Path) -> None:
+def save_json(data: dict | list, path: str | Path) -> None:
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4, cls=_NumpyEncoder)
 

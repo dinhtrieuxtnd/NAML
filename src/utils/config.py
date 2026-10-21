@@ -8,6 +8,11 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class RunConfig(StrictModel):
+    name: str
+    output_root: Path
+
+
 def load_config(config_path: str | Path) -> dict:
     path = Path(config_path)
     with path.open("r", encoding="utf-8") as file:

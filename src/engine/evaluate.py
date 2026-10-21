@@ -13,7 +13,6 @@ from src.data.collator import EvalCollator, NewsCollator
 from src.data.constants import (
     CANDIDATE_MASK_KEY,
     CANDIDATES_COLUMN,
-    CONFIG_FILE,
     HISTORY_COLUMN,
     HISTORY_MASK_KEY,
     INDEXES_KEY,
@@ -29,6 +28,7 @@ from src.models.naml import NAML
 from src.models.registry import build_model
 from src.utils.config import load_config
 from src.utils.io import save_json
+from src.utils.run import CONFIG_FILE
 
 logger = logging.getLogger(__name__)
 

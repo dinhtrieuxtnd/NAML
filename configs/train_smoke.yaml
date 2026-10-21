@@ -1,3 +1,7 @@
+run:
+  name: smoke
+  output_root: outputs/smoke
+
 data:
   processed_dir: data/processed/real_data_v1
   text_views: [title, sapo, tags]
@@ -31,5 +35,3 @@ trainer:
   log_every: 1
   max_train_steps: 5
   save_every_steps: null
-  output_root: outputs/smoke
-  run_name: smoke

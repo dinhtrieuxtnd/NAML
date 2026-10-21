@@ -4,10 +4,10 @@ Usage: python -m scripts.evaluate --checkpoint outputs/<run>/checkpoints/epoch_<
 """
 
 import argparse
-import logging
 from pathlib import Path
 
 from src.engine.evaluate import run_evaluation
+from src.utils.run import setup_logging
 
 
 def main() -> None:
@@ -16,8 +16,7 @@ def main() -> None:
     parser.add_argument("--split", choices=["val", "test"], required=True)
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.WARNING, format="%(asctime)s | %(levelname)s | %(message)s")
-    logging.getLogger("src").setLevel(logging.INFO)
+    setup_logging(None)
     run_evaluation(args.checkpoint, args.split)
 
 

@@ -6,7 +6,6 @@ import torch
 from src.data.constants import (
     ARTIFACTS_DIR,
     CATEGORY_DICT_FILE,
-    CONFIG_FILE,
     INDEX_MATRIX_FILE,
     NEWS_CATEGORY_MAPPING_FILE,
     NEWS_PAD_IDX,
@@ -14,6 +13,7 @@ from src.data.constants import (
 )
 from src.utils.config import load_config
 from src.utils.io import load_pickle
+from src.utils.run import CONFIG_FILE
 
 
 class NewsFeatures:

@@ -1,11 +1,10 @@
-from pathlib import Path
 from typing import Annotated, Literal
 
 from pydantic import Field, NonNegativeInt, PositiveFloat, PositiveInt
 
 from src.data.config import DataConfig
 from src.models.config import NAMLCNNConfig, NAMLConfig
-from src.utils.config import StrictModel
+from src.utils.config import RunConfig, StrictModel
 
 
 class LossConfig(StrictModel):
@@ -28,11 +27,10 @@ class TrainerConfig(StrictModel):
     max_train_steps: PositiveInt | None
     # Ghi đè checkpoints/latest mỗi N optimizer step để resume giữa epoch; None = chỉ lưu cuối epoch.
     save_every_steps: PositiveInt | None
-    output_root: Path
-    run_name: str
 
 
 class TrainConfig(StrictModel):
+    run: RunConfig
     data: DataConfig
     model: Annotated[NAMLConfig | NAMLCNNConfig, Field(discriminator="name")]
     loss: LossConfig

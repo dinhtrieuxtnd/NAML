@@ -33,10 +33,7 @@ HISTORY_MASK_KEY = "history_mask"
 CANDIDATE_MASK_KEY = "candidate_mask"
 INDEXES_KEY = "indexes"
 
-# Layout of a preprocessing output directory.
-CONFIG_FILE = "config.yaml"
-LOG_FILE = "preprocess.log"
-RUN_INFO_FILE = "run_info.json"
+# Data files of a preprocessing output directory (run files are in src/utils/run.py).
 STATISTICS_FILE = "statistics.json"
 ARTIFACTS_DIR = "artifacts"
 SPLITS = ("train", "val", "test")
@@ -47,9 +44,3 @@ NEWS_CATEGORY_MAPPING_FILE = "newsId_cateId_mapping.pkl"
 # Token matrices are saved as "<text column>.npy".
 TOKEN_MATRIX_FILE_TEMPLATE = "{column}.npy"
 
-# Layout of a training run directory: checkpoints/epoch_<i> after each epoch,
-# checkpoints/latest overwritten every save_every_steps (for resuming).
-CHECKPOINTS_DIR = "checkpoints"
-EPOCH_CHECKPOINT_TEMPLATE = "epoch_{epoch}"
-LATEST_CHECKPOINT = "latest"
-TRAINING_STATE_FILE = "training_state.json"
