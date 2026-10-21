@@ -26,7 +26,8 @@ class TrainerConfig(StrictModel):
     log_every: PositiveInt
     # Dừng sau N optimizer step (dùng cho smoke test); None = chạy đủ epochs.
     max_train_steps: PositiveInt | None
-    checkpoint_total_limit: PositiveInt
+    # Ghi đè checkpoints/latest mỗi N optimizer step để resume giữa epoch; None = chỉ lưu cuối epoch.
+    save_every_steps: PositiveInt | None
     output_root: Path
     run_name: str
 

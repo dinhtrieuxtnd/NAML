@@ -30,3 +30,8 @@ def save_json(data: dict, path: str | Path) -> None:
 def load_pickle(path: str | Path) -> Any:
     with open(path, "rb") as f:
         return pickle.load(f)
+
+
+def load_json(path: str | Path) -> Any:
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)

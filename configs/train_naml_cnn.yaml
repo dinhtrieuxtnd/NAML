@@ -3,7 +3,7 @@ data:
   text_views: [title, sapo, tags]
   history_len: 50
   num_negatives: 4
-  train_batch_size: 64
+  train_batch_size: 32
   eval_batch_size: 128
   num_workers: 4
   max_eval_impressions: null
@@ -33,6 +33,6 @@ trainer:
   mixed_precision: bf16
   log_every: 50
   max_train_steps: null
-  checkpoint_total_limit: 3
+  save_every_steps: 1000
   output_root: outputs
   run_name: naml_cnn_phobert_emb

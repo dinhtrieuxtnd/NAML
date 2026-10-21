@@ -90,9 +90,8 @@ def evaluate(
 def run_evaluation(checkpoint_dir: Path, split: str) -> dict[str, float]:
     """Evaluates a checkpoint saved by run_training on one split.
 
-    accelerate saves checkpoints to <run_dir>/checkpoints/checkpoint_<i>, so the run's
-    resolved config is read from <run_dir>/config.yaml. Metrics go to
-    <checkpoint_dir>/metrics_<split>.json.
+    Checkpoints live in <run_dir>/checkpoints/<name>, so the run's resolved config is read
+    from <run_dir>/config.yaml. Metrics go to <checkpoint_dir>/metrics_<split>.json.
     """
     run_dir = checkpoint_dir.parent.parent
     config = TrainConfig.model_validate(load_config(run_dir / CONFIG_FILE))

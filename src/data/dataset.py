@@ -30,15 +30,29 @@ def _history_rows(news: NewsFeatures, history: list[int], history_len: int) -> t
 
 
 class TrainDataset(Dataset):
-    """Each item: history [N] and candidates [K + 1] as news rows, the positive at position 0."""
+    """Each item: history [N] and candidates [K + 1] as news rows, the positive at position 0.
+
+    Negatives are drawn from an RNG seeded by (seed, epoch, idx), so they do not depend on
+    worker count or prefetching, and a resumed run draws the same negatives.
+    """
 
     def __init__(
-        self, samples: list[dict], news: NewsFeatures, history_len: int, num_negatives: int
+        self,
+        samples: list[dict],
+        news: NewsFeatures,
+        history_len: int,
+        num_negatives: int,
+        seed: int,
     ) -> None:
         self.samples = samples
         self.news = news
         self.history_len = history_len
         self.num_negatives = num_negatives
+        self.seed = seed
+        self.epoch = 0
+
+    def set_epoch(self, epoch: int) -> None:
+        self.epoch = epoch
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -46,11 +60,12 @@ class TrainDataset(Dataset):
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         sample = self.samples[idx]
         pool = sample[NEGATIVE_POOL_KEY]
+        rng = random.Random(f"{self.seed}:{self.epoch}:{idx}")
         # Impression có ít hơn K tin âm thì lấy lặp lại.
         if len(pool) >= self.num_negatives:
-            negatives = random.sample(pool, self.num_negatives)
+            negatives = rng.sample(pool, self.num_negatives)
         else:
-            negatives = random.choices(pool, k=self.num_negatives)
+            negatives = rng.choices(pool, k=self.num_negatives)
         candidates = self.news.to_rows([sample[POSITIVE_ITEM_KEY], *negatives])
         return {
             HISTORY_COLUMN: _history_rows(self.news, sample[HISTORY_COLUMN], self.history_len),

@@ -1,6 +1,6 @@
 """Evaluate a checkpoint saved by scripts/train.py.
 
-Usage: python -m scripts.evaluate --checkpoint outputs/<run>/checkpoints/checkpoint_<i> --split test
+Usage: python -m scripts.evaluate --checkpoint outputs/<run>/checkpoints/epoch_<i> --split test
 """
 
 import argparse

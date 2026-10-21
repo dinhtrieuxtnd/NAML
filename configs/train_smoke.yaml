@@ -30,6 +30,6 @@ trainer:
   mixed_precision: "no"
   log_every: 1
   max_train_steps: 5
-  checkpoint_total_limit: 1
+  save_every_steps: null
   output_root: outputs/smoke
   run_name: smoke

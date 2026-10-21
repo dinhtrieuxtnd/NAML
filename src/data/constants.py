@@ -46,3 +46,10 @@ CATEGORY_DICT_FILE = "category_dict.pkl"
 NEWS_CATEGORY_MAPPING_FILE = "newsId_cateId_mapping.pkl"
 # Token matrices are saved as "<text column>.npy".
 TOKEN_MATRIX_FILE_TEMPLATE = "{column}.npy"
+
+# Layout of a training run directory: checkpoints/epoch_<i> after each epoch,
+# checkpoints/latest overwritten every save_every_steps (for resuming).
+CHECKPOINTS_DIR = "checkpoints"
+EPOCH_CHECKPOINT_TEMPLATE = "epoch_{epoch}"
+LATEST_CHECKPOINT = "latest"
+TRAINING_STATE_FILE = "training_state.json"
