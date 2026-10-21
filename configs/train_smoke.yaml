@@ -7,9 +7,10 @@ data:
   text_views: [title, sapo, tags]
   history_len: 10
   num_negatives: 4
-  train_batch_size: 2
+  train_batch_size: 8
   eval_batch_size: 8
   num_workers: 0
+  max_train_samples: 64
   max_eval_impressions: 20
 
 model:
@@ -28,11 +29,21 @@ optimizer:
   lr: 1.0e-4
   weight_decay: 0.0
 
+scheduler:
+  factor: 0.5
+  patience: 1
+  min_lr: 1.0e-6
+
+early_stopping:
+  patience: 1
+  min_delta: 1.0e-4
+
 trainer:
   seed: 42
-  epochs: 1
+  epochs: 3
   gradient_accumulation_steps: 1
   mixed_precision: "no"
-  log_every: 1
-  max_train_steps: 5
+  max_grad_norm: 5.0
+  monitor: ndcg@10
+  max_train_steps: null
   save_every_steps: null

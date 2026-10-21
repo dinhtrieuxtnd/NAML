@@ -22,12 +22,11 @@ RUN_INFO_FILE = "run_info.json"
 LOG_FILE_TEMPLATE = "{stage}.log"
 HISTORY_FILE = "history.json"
 PLOTS_DIR = "plots"
-# Training checkpoints: checkpoints/epoch_<i> after each epoch,
-# checkpoints/latest overwritten every save_every_steps (for resuming).
+# Training checkpoints: checkpoints/best (best val monitor, with metrics.json) and
+# checkpoints/latest (overwritten every save_every_steps and after each epoch, for resuming).
 CHECKPOINTS_DIR = "checkpoints"
 BEST_CHECKPOINT = "best"
 LATEST_CHECKPOINT = "latest"
-EPOCH_CHECKPOINT_TEMPLATE = "epoch_{epoch}"
 TRAINING_STATE_FILE = "training_state.json"
 # Evaluation of a checkpoint goes to <run_dir>/evaluation_<checkpoint name>/.
 EVALUATION_DIR_TEMPLATE = "evaluation_{checkpoint}"

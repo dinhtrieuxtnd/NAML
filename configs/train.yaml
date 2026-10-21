@@ -7,9 +7,10 @@ data:
   text_views: [title, sapo, tags]
   history_len: 50
   num_negatives: 4
-  train_batch_size: 32
+  train_batch_size: 256
   eval_batch_size: 128
   num_workers: 4
+  max_train_samples: null
   max_eval_impressions: null
 
 model:
@@ -25,14 +26,24 @@ loss:
   name: cross_entropy
 
 optimizer:
-  lr: 1.0e-4
+  lr: 2.0e-4
   weight_decay: 0.0
+
+scheduler:
+  factor: 0.5
+  patience: 1
+  min_lr: 1.0e-6
+
+early_stopping:
+  patience: 3
+  min_delta: 1.0e-4
 
 trainer:
   seed: 42
-  epochs: 3
-  gradient_accumulation_steps: 4
+  epochs: 30
+  gradient_accumulation_steps: 1
   mixed_precision: bf16
-  log_every: 50
+  max_grad_norm: 5.0
+  monitor: ndcg@10
   max_train_steps: null
-  save_every_steps: 1000
+  save_every_steps: 500

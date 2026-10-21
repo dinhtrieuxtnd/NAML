@@ -49,5 +49,7 @@ class DataConfig(StrictModel):
     train_batch_size: PositiveInt
     eval_batch_size: PositiveInt
     num_workers: NonNegativeInt
+    # Chỉ lấy N sample train đầu (dùng cho smoke test: nhiều epoch rất ngắn); None = toàn bộ.
+    max_train_samples: PositiveInt | None
     # Chỉ lấy N impression đầu của val/test (dùng cho smoke test); None = toàn bộ.
     max_eval_impressions: PositiveInt | None

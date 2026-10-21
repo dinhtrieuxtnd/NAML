@@ -3,11 +3,13 @@ from pathlib import Path
 
 import torch
 from accelerate import Accelerator
+from accelerate.utils import SAFE_WEIGHTS_NAME, load_checkpoint_in_model
 from einops import repeat
 from torch.utils.data import DataLoader
 from torchmetrics import MetricCollection
 from torchmetrics.classification import BinaryAUROC
 from torchmetrics.retrieval import RetrievalAUROC, RetrievalMRR, RetrievalNormalizedDCG
+from tqdm import tqdm
 
 from src.data.collator import EvalCollator, NewsCollator
 from src.data.constants import (
@@ -45,12 +47,13 @@ def evaluate(
     """Encodes every news the split needs once, then ranks the candidates of each impression."""
     model.eval()
     unwrapped = accelerator.unwrap_model(model)
+    disable_progress = None if accelerator.is_main_process else True
 
     news_loader = accelerator.prepare(DataLoader(
         NewsDataset(dataset.news_rows()), batch_size=batch_size,
         collate_fn=NewsCollator(news), num_workers=num_workers))
     news_table = None
-    for batch in news_loader:
+    for batch in tqdm(news_loader, desc="encode news", leave=False, disable=disable_progress):
         with accelerator.autocast():
             # vectors: [U, D]
             vectors = unwrapped.encode_news(batch[NEWS_TOKENS_KEY], batch[NEWS_CATEGORY_KEY])
@@ -70,7 +73,7 @@ def evaluate(
 
     eval_loader = accelerator.prepare(DataLoader(
         dataset, batch_size=batch_size, collate_fn=EvalCollator(), num_workers=num_workers))
-    for batch in eval_loader:
+    for batch in tqdm(eval_loader, desc="score impressions", leave=False, disable=disable_progress):
         # history: [B, N] -> [B, N, D]; user: [B, D]
         user = unwrapped.encode_user(news_table[batch[HISTORY_COLUMN]], batch[HISTORY_MASK_KEY])
         # candidates: [B, C_max] -> [B, C_max, D]; scores: [B, C_max]
@@ -102,9 +105,11 @@ def run_evaluation(checkpoint_dir: Path, split: str) -> dict[str, float]:
     dataset = EvalDataset(
         load_split_samples(data_cfg.processed_dir, split)[:data_cfg.max_eval_impressions],
         news, data_cfg.history_len)
-    model = accelerator.prepare(
-        build_model(config.model, news.num_categories, data_cfg.text_views, news.embedding))
-    accelerator.load_state(str(checkpoint_dir))
+    model = build_model(config.model, news.num_categories, data_cfg.text_views, news.embedding)
+    # Chỉ cần trọng số model (accelerator.save_state lưu ở SAFE_WEIGHTS_NAME), không nạp
+    # optimizer/scheduler/RNG của checkpoint.
+    load_checkpoint_in_model(model, str(checkpoint_dir / SAFE_WEIGHTS_NAME), strict=True)
+    model = accelerator.prepare(model)
     logger.info("Loaded %s, %s impressions=%d", checkpoint_dir, split, len(dataset))
 
     metrics = evaluate(model, accelerator, dataset, news,
