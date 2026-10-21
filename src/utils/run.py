@@ -22,6 +22,9 @@ RUN_INFO_FILE = "run_info.json"
 LOG_FILE_TEMPLATE = "{stage}.log"
 HISTORY_FILE = "history.json"
 PLOTS_DIR = "plots"
+LOSS_PLOT_FILE = "loss.png"
+METRICS_PLOT_FILE = "metrics.png"
+LR_PLOT_FILE = "lr.png"
 # Training checkpoints: checkpoints/best (best val monitor, with metrics.json) and
 # checkpoints/latest (overwritten every save_every_steps and after each epoch, for resuming).
 CHECKPOINTS_DIR = "checkpoints"

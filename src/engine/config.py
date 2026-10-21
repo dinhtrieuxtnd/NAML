@@ -3,6 +3,7 @@ from typing import Literal
 from pydantic import NonNegativeFloat, NonNegativeInt, PositiveFloat, PositiveInt, confloat
 
 from src.data.config import DataConfig
+from src.data.constants import METRIC_NAMES
 from src.models.config import NAMLConfig
 from src.utils.config import RunConfig, StrictModel
 
@@ -24,7 +25,7 @@ class TrainerConfig(StrictModel):
     mixed_precision: Literal["no", "fp16", "bf16"]
     max_grad_norm: PositiveFloat
     # Metric val dùng chung cho chọn checkpoint best, scheduler và early stopping.
-    monitor: Literal["auc", "impression_auc", "mrr", "ndcg@5", "ndcg@10"]
+    monitor: Literal[METRIC_NAMES]
     # Dừng sau N optimizer step (dùng cho smoke test); None = chạy đủ epochs.
     max_train_steps: PositiveInt | None
     # Ghi đè checkpoints/latest mỗi N optimizer step để resume giữa epoch; None = chỉ lưu cuối epoch.

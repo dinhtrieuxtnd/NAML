@@ -31,6 +31,9 @@ UNK_TOKEN = "<UNK>"
 PAD_TOKEN_IDX = 0
 UNK_TOKEN_IDX = 1
 
+# Metrics returned by src.engine.evaluate.evaluate, in report order.
+METRIC_NAMES = ("auc", "impression_auc", "mrr", "ndcg@5", "ndcg@10")
+
 # Columns of predictions.csv, besides IMPRESSION_ID_COLUMN / USER_ID_COLUMN.
 PREDICTION_NEWS_ID_COLUMN = "news_id"
 PREDICTION_LABEL_COLUMN = "label"

@@ -1,23 +1,23 @@
 # NAML cho gợi ý tin tức tiếng Việt
 
-Cài đặt mô hình **NAML** (Neural News Recommendation with Attentive Multi-View Learning, Wu và cộng sự, IJCAI 2019) cho dữ liệu tin tức tiếng Việt. Có hai biến thể, chọn qua config:
+Cài đặt mô hình **NAML** (Neural News Recommendation with Attentive Multi-View Learning, Wu và cộng sự, IJCAI 2019) cho dữ liệu tin tức tiếng Việt, theo đúng kiến trúc của bài báo gốc. Word embedding là fastText `cc.vi.300` (300 chiều) thay cho GloVe. Model có khoảng 9 triệu tham số, trong đó khoảng 7,4 triệu thuộc ma trận embedding.
 
-| `model.name` | News encoder cho view văn bản | Ghi chú |
-|---|---|---|
-| `naml` | PhoBERT (`vinai/phobert-base-v2`) + word attention | Đóng băng / train k layer cuối / finetune toàn bộ qua `num_trainable_layers` |
-| `naml_cnn` | Embedding PhoBERT + CNN + word attention | Baseline giống bài báo gốc, thay GloVe bằng ma trận embedding của PhoBERT |
-
-Mỗi bài báo có 4 view: `title`, `sapo`, `tags` (văn bản) và `category`. Các view được gộp bằng view-level attention; user vector là news-level attention trên lịch sử click; điểm click là tích vô hướng. Huấn luyện bằng 1 tin dương + K tin âm lấy trong cùng impression.
+Mỗi bài báo có 4 view: `title`, `sapo`, `tags` (văn bản) và `category`.
+- Mỗi view văn bản đi qua word embedding, CNN rồi word attention.
+- `category` đi qua embedding rồi một lớp dense.
+- Các view được gộp bằng view-level attention.
+- User vector là news-level attention trên lịch sử click; điểm click là tích vô hướng.
+- Huấn luyện bằng 1 tin dương + K tin âm lấy trong cùng impression.
 
 ## Cấu trúc
 
 ```
 configs/            # mọi hyperparameter (YAML, validate bằng Pydantic)
 scripts/            # entry-point: preprocess.py, train.py, evaluate.py
-src/data/           # đọc CSV, tiền xử lý, Dataset, collator, hằng số
+src/data/           # đọc CSV, tách token, embedding, tiền xử lý, Dataset, collator, hằng số
 src/models/         # nn.Module thuần + registry.py (registry duy nhất)
-src/engine/         # vòng train (accelerate) và evaluate (torchmetrics)
-src/utils/          # tiện ích dùng chung: config loader, I/O
+src/engine/         # vòng train (accelerate), evaluate (torchmetrics), vẽ biểu đồ
+src/utils/          # tiện ích dùng chung: config loader, I/O, quy chuẩn run (run.py)
 ```
 
 ## Cài đặt môi trường
@@ -28,7 +28,7 @@ Môi trường đã được kiểm tra:
 |---|---|
 | Python | **3.12** (bắt buộc ≥ 3.11 vì `numpy 2.5`, `pandas 3.0`) |
 | torch | 2.13.0 (CUDA 12.6 trên máy dev; xem bên dưới cho GPU đời mới) |
-| transformers / accelerate / torchmetrics | 5.15.0 / 1.15.0 / 1.9.0 |
+| accelerate / torchmetrics / matplotlib | 1.15.0 / 1.9.0 / 3.11.1 |
 | Các thư viện khác | đã pin trong `requirement.txt` |
 
 ### Các bước trên máy GPU (Linux, ví dụ máy thuê)
@@ -39,9 +39,7 @@ Môi trường đã được kiểm tra:
 nvidia-smi
 ```
 
-Xem dòng `CUDA Version` ở góc trên bên phải. Dòng này cho biết phiên bản CUDA cao nhất mà driver hỗ trợ:
-
-Chọn bản build torch theo số này:
+Xem dòng `CUDA Version` ở góc trên bên phải. Dòng này cho biết phiên bản CUDA cao nhất mà driver hỗ trợ. Chọn bản build torch theo số này:
 
 | `CUDA Version` trong `nvidia-smi` | Bản torch cần cài | GPU dùng được |
 |---|---|---|
@@ -96,28 +94,22 @@ Lệnh phải in `True` và tên GPU, không báo lỗi.
 
 **5. Chép dữ liệu đã tiền xử lý lên máy**
 
-Thư mục `data/` không có trên git. Chép bản đã tiền xử lý (khoảng 200MB) từ máy local, giữ đúng đường dẫn:
+Thư mục `data/` không có trên git. Chép bản đã tiền xử lý (khoảng 220MB, đã gồm `embedding.npy`) từ máy local, giữ đúng đường dẫn:
 
 ```bash
 # chạy trên máy local, từ thư mục gốc của repo
-scp -P <port> -r data/processed/real_data_v1 <user>@<host>:<đường-dẫn-repo>/data/processed/
+scp -P <port> -r data/processed/real_data_fasttext_v1 <user>@<host>:<đường-dẫn-repo>/data/processed/
 ```
 
-Cách này không cần cài `pyvi` và không phải chạy lại preprocessing trên máy thuê.
+Train không đọc file `.vec`, nên không cần chép file fastText 4,5GB và không phải chạy lại tiền xử lý trên máy thuê.
 
-**6. Tải trước PhoBERT** (khoảng 540MB, cần internet)
-
-```bash
-python -c "from transformers import AutoModel, AutoTokenizer; AutoTokenizer.from_pretrained('vinai/phobert-base-v2'); AutoModel.from_pretrained('vinai/phobert-base-v2')"
-```
-
-**7. Chạy smoke test trên GPU trước khi train thật**
+**6. Chạy smoke test trên GPU trước khi train thật**
 
 ```bash
 python -m scripts.train --config configs/train_smoke.yaml
 ```
 
-Smoke test chạy khoảng 1 phút. Nếu nó in loss và metric val thì môi trường đã sẵn sàng.
+Smoke test chạy dưới 1 phút. Nếu nó in 3 dòng `epoch=...` và `train completed` thì môi trường đã sẵn sàng.
 
 ### Lỗi thường gặp
 
@@ -128,10 +120,9 @@ Smoke test chạy khoảng 1 phút. Nếu nó in loss và metric val thì môi t
 | `torch.cuda.is_available()` trả về `False` | Cài nhầm torch bản CPU, hoặc bản build cần CUDA mới hơn driver hỗ trợ | Cài lại torch theo bảng ở bước 1 và bước 3 |
 | `No matching distribution found for torch==2.13.0` khi dùng `--index-url .../cu128` | Không có torch 2.13.0 bản cu128 | Dùng `cu129`, `cu130` hoặc `cu126` |
 | `processed_dir ... Path does not point to a directory` | Chưa chép dữ liệu | Bước 5 |
-| `... was tokenized with X, but model.pretrained_name is Y` | Dữ liệu processed được tạo bằng tokenizer khác | Dùng đúng bản `real_data_v1`, hoặc chạy lại preprocessing |
 | `Bus error` / `DataLoader worker ... killed` / `unable to write to file </torch_...>` | Docker cấp `/dev/shm` quá nhỏ | Đặt `data.num_workers: 0` trong config, hoặc tạo container với `--shm-size=8g` |
-| `CUDA out of memory` | Batch quá lớn so với VRAM | Giảm `data.train_batch_size`, tăng `trainer.gradient_accumulation_steps` để giữ batch hiệu dụng; hoặc giảm `model.num_trainable_layers` / `data.history_len` |
-| Không tải được `vinai/phobert-base-v2` | Máy không ra được internet tới HuggingFace | Chép thư mục `~/.cache/huggingface/hub/models--vinai--phobert-base-v2` từ máy local sang cùng vị trí trên máy thuê |
+| `CUDA out of memory` | Batch quá lớn so với VRAM | Giảm `data.train_batch_size`, tăng `trainer.gradient_accumulation_steps` để giữ batch hiệu dụng; hoặc giảm `data.history_len` |
+| `Cannot resume ...: config differs in ...` | Đổi trường cố định khi resume | Giữ nguyên các trường được liệt kê (xem [Resume](#resume)) |
 
 ### Cài trên Windows (máy dev)
 
@@ -153,8 +144,28 @@ Trên Windows, nên để `data.num_workers: 0` nếu gặp lỗi hoặc thấy 
   - `history`: các `newsId` đã click, cách nhau bởi dấu cách (có thể rỗng).
   - `impressions`: các `newsId-label` cách nhau bởi dấu cách, `label` là 1 (click) hoặc 0.
 - `data/raw/news/news.csv`, có header: `newsId, title, sapo, tags, category`.
+- `data/raw/fasttext/cc.vi.300.vec`: word vector fastText tiếng Việt (4,5GB, định dạng `.vec` có dòng header). Chỉ cần lúc tiền xử lý. Trên Windows có thể tạo link thay vì chép:
+  ```bash
+  mklink data\raw\fasttext\cc.vi.300.vec <đường-dẫn-tới>\cc.vi.300.vec
+  ```
 
 Ba tập train/val/test phải được chia sẵn theo thời gian, và lịch sử của mỗi impression chỉ gồm các click trước thời điểm impression. Pipeline không kiểm tra lại các điều kiện này.
+
+## Quy chuẩn run
+
+Mỗi lần chạy một script là một run, và config nào cũng có section `run: {name, output_root}`.
+
+| Stage | Thư mục | Các file chung |
+|---|---|---|
+| Tiền xử lý | `output_root/name`, tên cố định vì config train trỏ tới nó | `config.yaml`, `run_info.json`, `preprocess.log` |
+| Train | `output_root/<name>_<timestamp>`; resume ghi tiếp vào thư mục cũ | `config.yaml`, `run_info.json`, `train.log` |
+| Evaluate | `<thư mục run train>/evaluation_<checkpoint>/` | chỉ `metrics.json` và `predictions.csv`; log chỉ in ra màn hình |
+
+- `config.yaml` là config đã resolve và không bao giờ bị ghi đè.
+- `run_info.json` là danh sách, mỗi lần chạy hoặc resume thêm một mục, gồm:
+  - stage, trạng thái (`running`/`completed`/`failed` kèm lỗi), thời gian;
+  - phiên bản python/torch/CUDA, GPU, git commit, câu lệnh.
+- Log ghi ra cả file và màn hình nhưng chỉ ghi các mốc quan trọng. Tiến độ theo step chỉ hiện bằng thanh `tqdm` trên terminal, không ghi vào file log.
 
 ## 1. Tiền xử lý
 
@@ -162,36 +173,64 @@ Ba tập train/val/test phải được chia sẵn theo thời gian, và lịch 
 python -m scripts.preprocess --config configs/preprocess.yaml
 ```
 
-Bước này tách từ bằng ViTokenizer, tokenize bằng tokenizer PhoBERT, rồi ghi vào `data/processed/<name>/`:
+Toàn bộ bước này mất khoảng 1–2 phút.
+- **Tách token:** NFKC → chữ thường → regex `\w+|[^\w\s]`. Tách theo âm tiết, mỗi dấu câu là một token. Không dùng tách từ ghép, vì fastText `cc.vi` không có vector cho từ ghép.
+- **Từ điển:** dựng từ text của news. `<PAD>` = 0, `<UNK>` = 1, các token còn lại xếp theo tần suất giảm dần.
+- **Ma trận embedding:** dựng một lần từ file `.vec`, đọc theo từng dòng. Mỗi token được tra như sau:
+  - Ưu tiên khớp chính xác.
+  - Sau đó thử dạng viết hoa.
+  - Nếu vẫn không có thì khởi tạo theo `N(0, embedding.unmatched_init_std)`.
+  - Hàng `<PAD>` bằng 0.
+- **Lịch sử click:** bỏ tin trùng, giữ lần click gần nhất.
 
-- `artifacts/`: token matrix cho từng view (`title.npy`, ...), mẫu `{train,val,test}_samples.pkl`, mapping `newsId → row` và category.
-- `config.yaml`, `statistics.json`, `run_info.json`, `preprocess.log`.
+Kết quả ghi vào `data/processed/<run.name>/`:
 
-Nếu thư mục output đã tồn tại thì script báo lỗi. Đặt `output.overwrite: true` để ghi đè.
+- `artifacts/`:
+  - token matrix cho từng view (`title.npy`, ...);
+  - `vocab.json`, `embedding.npy`;
+  - mẫu `{train,val,test}_samples.pkl`;
+  - mapping `newsId → row` và category.
+- `statistics.json`:
+  - kích thước vocab;
+  - độ phủ embedding theo loại từ (~89%) và theo token (~99,7%);
+  - phân bố độ dài theo âm tiết (`p95`, tỉ lệ bị cắt), dùng để chỉnh `text.max_length`;
+  - số mẫu và số click trùng đã bỏ.
+- `config.yaml`, `run_info.json`, `preprocess.log`.
+
+Nếu thư mục output đã tồn tại thì script báo lỗi. Đặt `run.overwrite: true` để ghi đè.
 
 ## 2. Train
 
 ```bash
-python -m scripts.train --config configs/train.yaml            # naml (PhoBERT)
-python -m scripts.train --config configs/train_naml_cnn.yaml   # baseline naml_cnn
+python -m scripts.train --config configs/train.yaml
 ```
 
-Mỗi lần chạy tạo một thư mục `outputs/<run_name>_<timestamp>/`:
+- Optimizer là AdamW, có gradient clipping (`trainer.max_grad_norm`).
+- Learning rate giảm theo `ReduceLROnPlateau` trên metric val `trainer.monitor` (mặc định `ndcg@10`); scheduler step một lần mỗi epoch.
+- Early stopping dùng cùng metric đó. Train dừng khi `early_stopping.patience` epoch liên tiếp không vượt giá trị tốt nhất cộng `min_delta`.
+
+Sau mỗi epoch, script đánh giá trên tập val. Tập test không được dùng trong lúc train. Mỗi epoch ghi đúng một dòng log:
 
 ```
-config.yaml                 # config đã resolve của run
-tensorboard/                # loss train, metric val
-checkpoints/epoch_<i>/      # sau mỗi epoch (giữ lại tất cả)
-checkpoints/latest/         # ghi đè mỗi trainer.save_every_steps step, dùng để resume
+epoch=2 loss=1.4472 auc=0.4931 imp_auc=0.6084 mrr=0.4829 ndcg@5=0.5410 ndcg@10=0.5817 lr=1.00e-04 time=0.9s best
 ```
 
-Sau mỗi epoch, script đánh giá trên tập val. Tập test không được dùng trong lúc train.
+Thư mục run `outputs/<run.name>_<timestamp>/`:
 
-Theo dõi quá trình train:
-
-```bash
-tensorboard --logdir outputs
 ```
+config.yaml, run_info.json, train.log
+history.json                # mỗi epoch một dòng: epoch, train_loss, lr, time, các metric val
+plots/                      # loss.png, metrics.png (đánh dấu epoch tốt nhất), lr.png; vẽ lại sau mỗi epoch
+checkpoints/best/           # tốt nhất theo trainer.monitor, kèm metrics.json
+checkpoints/latest/         # ghi đè mỗi trainer.save_every_steps step và cuối mỗi epoch, dùng để resume
+evaluation_<checkpoint>/    # tạo bởi scripts/evaluate.py
+```
+
+Mỗi checkpoint chứa model, optimizer, scheduler, RNG, `config.yaml` của nó và `training_state.json`. File `training_state.json` lưu:
+- vị trí đang train;
+- loss đang cộng dồn của epoch dở;
+- giá trị tốt nhất và bộ đếm patience;
+- `history`.
 
 ### Resume
 
@@ -201,17 +240,26 @@ Nếu máy bị ngắt, chạy lại với `--resume`, trỏ tới checkpoint mu
 python -m scripts.train --config configs/train.yaml --resume outputs/<run>/checkpoints/latest
 ```
 
-Run được resume tiếp tục ghi vào thư mục run cũ. Thứ tự dữ liệu, tin âm và RNG đều cố định theo seed, nên kết quả giống hệt như khi chạy liên tục. Được phép đổi các tham số như `epochs`, `max_train_steps`, `num_workers`, `eval_batch_size`. Nếu đổi `model`, `loss`, `optimizer`, dữ liệu train, `seed` hoặc `gradient_accumulation_steps` thì script báo lỗi.
+Run được resume ghi tiếp vào thư mục run cũ.
+- **Kết quả giống hệt chạy liên tục:** thứ tự dữ liệu, tin âm và RNG cố định theo (seed, epoch), và evaluate không làm lệch RNG. Điều này đúng cả khi dừng giữa epoch lẫn ở ranh giới epoch.
+- **Được đổi:** `epochs`, `max_train_steps`, `save_every_steps`, `num_workers`, `eval_batch_size`, `early_stopping`.
+- **Đổi thì script báo lỗi:**
+  - `model`, `loss`, `optimizer`, `scheduler`;
+  - dữ liệu train: `processed_dir`, `text_views`, `history_len`, `num_negatives`, `train_batch_size`, `max_train_samples`;
+  - `seed`, `gradient_accumulation_steps`, `monitor`.
 
-## 3. Đánh giá checkpoint
+## 3. Đánh giá trên tập test
 
-Chọn checkpoint tốt nhất theo metric val trên tensorboard, rồi chạy trên tập test:
+Sau khi train xong, đánh giá checkpoint đã chọn (thường là `best`) trên tập test:
 
 ```bash
-python -m scripts.evaluate --checkpoint outputs/<run>/checkpoints/epoch_<i> --split test
+python -m scripts.evaluate --checkpoint outputs/<run>/checkpoints/best
 ```
 
-Kết quả được ghi vào `<checkpoint>/metrics_test.json`. Các metric (tính bằng torchmetrics):
+Config được đọc từ `config.yaml` của checkpoint. Kết quả ghi vào `outputs/<run>/evaluation_best/`:
+
+- `metrics.json`: các metric bên dưới, tính bằng torchmetrics.
+- `predictions.csv`: mỗi dòng là một cặp impression–candidate, gồm `impression_id, user_id, news_id, label, score, rank`. `rank` = 1 là điểm cao nhất trong impression.
 
 | Metric | Ý nghĩa |
 |---|---|
@@ -226,12 +274,18 @@ Các impression có lịch sử rỗng bị loại khỏi train và evaluate.
 
 | Trường | Ý nghĩa |
 |---|---|
-| `data.history_len` | Số tin gần nhất trong lịch sử được dùng |
+| `text.max_length.{title,sapo,tags}` | Độ dài tối đa (số token âm tiết) của từng view, chỉnh theo `p95` trong `statistics.json` |
+| `embedding.unmatched_init_std` | Độ lệch chuẩn khởi tạo cho token không có trong fastText |
+| `data.history_len` | Số tin gần nhất trong lịch sử được dùng (sau khi bỏ tin trùng) |
 | `data.num_negatives` | K tin âm mỗi mẫu dương (thiếu thì lấy lặp lại) |
-| `data.max_eval_impressions` | Giới hạn số impression val/test (`null` = toàn bộ) |
-| `model.num_trainable_layers` | `naml`: 0 = đóng băng PhoBERT, k = train k layer cuối, 12 = finetune toàn bộ |
-| `model.freeze_embedding` | `naml_cnn`: đóng băng ma trận embedding hay không |
-| `optimizer.lr` / `optimizer.encoder_lr` | Learning rate cho phần head / phần pretrained |
+| `data.max_train_samples` / `data.max_eval_impressions` | Giới hạn số mẫu train / impression val-test, dùng cho smoke test (`null` = toàn bộ) |
+| `model.freeze_embedding` | Đóng băng ma trận word embedding hay không |
+| `model.num_filters` / `model.window_size` | Số filter và kích thước cửa sổ của CNN |
+| `optimizer.lr` / `optimizer.weight_decay` | AdamW, cùng một lr cho mọi tham số |
+| `scheduler.{factor,patience,min_lr}` | `ReduceLROnPlateau` theo `trainer.monitor` |
+| `early_stopping.{patience,min_delta}` | Dừng khi metric không cải thiện |
+| `trainer.monitor` | Metric val để chọn `best`, cho scheduler và early stopping |
+| `trainer.max_grad_norm` | Ngưỡng gradient clipping |
 | `trainer.mixed_precision` | `no`, `fp16` hoặc `bf16` |
 | `trainer.max_train_steps` | Dừng sau N optimizer step (`null` = chạy đủ `epochs`) |
 | `trainer.save_every_steps` | Chu kỳ ghi `checkpoints/latest` (`null` = chỉ lưu cuối epoch) |
@@ -240,7 +294,7 @@ Thêm model hoặc loss mới: viết module trong `src/models/`, thêm config P
 
 ## Smoke test
 
-Chạy sau mỗi thay đổi trong `src/` hoặc `configs/`. Lệnh dưới train 5 step và đánh giá trên 20 impression, không cần GPU mạnh:
+Chạy sau mỗi thay đổi trong `src/` hoặc `configs/`. Lệnh dưới train 3 epoch trên 64 mẫu và đánh giá val trên 20 impression; early stopping (`patience` 1) thường dừng ở epoch 3. Không cần GPU mạnh:
 
 ```bash
 python -m scripts.train --config configs/train_smoke.yaml
@@ -248,4 +302,4 @@ python -m scripts.train --config configs/train_smoke.yaml
 
 ## Tham khảo
 
-C. Wu, F. Wu, M. An, J. Huang, Y. Huang, X. Xie. *Neural News Recommendation with Attentive Multi-View Learning*. IJCAI 2019. https://arxiv.org/abs/1907.05576
+C. Wu, F. Wu, M. An, J. Huang, Y. Huang, X. Xie. *Neural News Recommendation with Attentive Multi-View Learning*. IJCAI 2019. https://arxiv.org/pdf/1907.05576

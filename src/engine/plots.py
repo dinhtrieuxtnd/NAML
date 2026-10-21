@@ -6,7 +6,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.ticker import MaxNLocator  # noqa: E402
 
-METRICS = ("auc", "impression_auc", "mrr", "ndcg@5", "ndcg@10")
+from src.data.constants import METRIC_NAMES  # noqa: E402
+from src.utils.run import LOSS_PLOT_FILE, LR_PLOT_FILE, METRICS_PLOT_FILE  # noqa: E402
 
 
 def _save(fig: plt.Figure, path: Path) -> None:
@@ -26,20 +27,20 @@ def plot_history(history: list[dict], best_epoch: int | None, plots_dir: Path) -
     ax.plot(epochs, [row["train_loss"] for row in history], marker="o")
     ax.set(xlabel="epoch", ylabel="train loss", title="Train loss")
     ax.grid(alpha=0.3)
-    _save(fig, plots_dir / "loss.png")
+    _save(fig, plots_dir / LOSS_PLOT_FILE)
 
     fig, ax = plt.subplots(figsize=(7, 4))
-    for metric in METRICS:
+    for metric in METRIC_NAMES:
         ax.plot(epochs, [row[metric] for row in history], marker="o", label=metric)
     if best_epoch is not None:
         ax.axvline(best_epoch, color="gray", linestyle="--", label=f"best (epoch {best_epoch})")
     ax.set(xlabel="epoch", ylabel="value", title="Validation metrics")
     ax.grid(alpha=0.3)
     ax.legend()
-    _save(fig, plots_dir / "metrics.png")
+    _save(fig, plots_dir / METRICS_PLOT_FILE)
 
     fig, ax = plt.subplots(figsize=(6, 4))
     ax.plot(epochs, [row["lr"] for row in history], marker="o")
     ax.set(xlabel="epoch", ylabel="learning rate", title="Learning rate", yscale="log")
     ax.grid(alpha=0.3)
-    _save(fig, plots_dir / "lr.png")
+    _save(fig, plots_dir / LR_PLOT_FILE)

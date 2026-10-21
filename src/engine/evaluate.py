@@ -21,6 +21,7 @@ from src.data.constants import (
     IMPRESSION_ID_COLUMN,
     INDEXES_KEY,
     LABELS_COLUMN,
+    METRIC_NAMES,
     NEWS_CATEGORY_KEY,
     NEWS_ROWS_KEY,
     NEWS_TOKENS_KEY,
@@ -119,7 +120,7 @@ def evaluate(
             }))
 
     metrics = {"auc": auroc.compute(), **retrieval.compute()}
-    metrics = {name: value.item() for name, value in metrics.items()}
+    metrics = {name: metrics[name].item() for name in METRIC_NAMES}
     if not collect_predictions:
         return metrics, None
     # Nhiều process: gom về một chỗ; impression bị lặp do chia đều batch giữa các process thì bỏ.

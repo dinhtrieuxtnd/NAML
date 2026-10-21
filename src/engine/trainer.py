@@ -16,6 +16,7 @@ from src.data.constants import (
     CANDIDATES_COLUMN,
     HISTORY_COLUMN,
     HISTORY_MASK_KEY,
+    METRIC_NAMES,
     NEWS_CATEGORY_KEY,
     NEWS_TOKENS_KEY,
     STATISTICS_FILE,
@@ -54,14 +55,8 @@ _RESUME_FIXED_FIELDS = {
     "trainer": {"seed", "gradient_accumulation_steps", "monitor"},
 }
 
-# Tên metric trong dòng log mỗi epoch, theo đúng thứ tự in.
-_LOG_METRIC_NAMES = {
-    "auc": "auc",
-    "impression_auc": "imp_auc",
-    "mrr": "mrr",
-    "ndcg@5": "ndcg@5",
-    "ndcg@10": "ndcg@10",
-}
+# Tên viết tắt của metric trong dòng log mỗi epoch (metric không có ở đây giữ nguyên tên).
+_LOG_ABBREVIATIONS = {"impression_auc": "imp_auc"}
 
 
 def _build_optimizer(model: torch.nn.Module, config: TrainConfig) -> torch.optim.Optimizer:
@@ -271,8 +266,8 @@ def _train(config: TrainConfig, run_dir: Path, resume_from: Path | None) -> None
 
             logger.info(
                 "epoch=%d loss=%.4f %s lr=%.2e time=%.1fs%s", epoch + 1, train_loss,
-                " ".join(f"{log_name}={metrics[name]:.4f}"
-                         for name, log_name in _LOG_METRIC_NAMES.items()),
+                " ".join(f"{_LOG_ABBREVIATIONS.get(name, name)}={metrics[name]:.4f}"
+                         for name in METRIC_NAMES),
                 lr, epoch_time, " best" if is_best else "")
             if state["bad_epochs"] >= config.early_stopping.patience:
                 logger.info("Early stopping: %s has not improved by more than %g for %d epochs",
