@@ -1,0 +1,12 @@
+numpy==2.5.1
+pandas==3.0.5
+PyYAML==6.0.3
+torch==2.13.0
+tqdm==4.70.0
+transformers==5.15.0
+pydantic==2.13.5
+pyvi==0.1.1
+accelerate==1.15.0
+torchmetrics==1.9.0
+einops==0.8.2
+tensorboard==2.21.0

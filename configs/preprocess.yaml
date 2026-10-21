@@ -1,0 +1,22 @@
+preprocessing:
+  name: real_data_v1
+
+input:
+  train_behaviors: data/raw/behaviors/train_behaviors.csv
+  val_behaviors: data/raw/behaviors/val_behaviors.csv
+  test_behaviors: data/raw/behaviors/test_behaviors.csv
+  news: data/raw/news/news.csv
+
+tokenizer:
+  name: vinai/phobert-base-v2
+
+output:
+  directory: data/processed/real_data_v1
+  overwrite: false
+
+text:
+  lowercase: true
+  max_length:
+    title: 32
+    sapo: 64
+    tags: 32

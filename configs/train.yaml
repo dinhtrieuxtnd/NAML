@@ -1,0 +1,36 @@
+data:
+  processed_dir: data/processed/real_data_v1
+  text_views: [title, sapo, tags]
+  history_len: 50
+  num_negatives: 4
+  train_batch_size: 16
+  eval_batch_size: 128
+  num_workers: 4
+  max_eval_impressions: null
+
+model:
+  name: naml
+  pretrained_name: vinai/phobert-base-v2
+  # 0 = đóng băng PhoBERT, k = train k layer cuối, 12 = finetune toàn bộ.
+  num_trainable_layers: 4
+  category_dim: 100
+  query_dim: 200
+  dropout: 0.2
+
+loss:
+  name: cross_entropy
+
+optimizer:
+  lr: 1.0e-4
+  encoder_lr: 2.0e-5
+
+trainer:
+  seed: 42
+  epochs: 3
+  gradient_accumulation_steps: 4
+  mixed_precision: bf16
+  log_every: 50
+  max_train_steps: null
+  checkpoint_total_limit: 3
+  output_root: outputs
+  run_name: naml_phobert
