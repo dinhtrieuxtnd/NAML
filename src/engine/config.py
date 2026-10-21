@@ -1,9 +1,9 @@
-from typing import Annotated, Literal
+from typing import Literal
 
-from pydantic import Field, NonNegativeInt, PositiveFloat, PositiveInt
+from pydantic import NonNegativeFloat, NonNegativeInt, PositiveFloat, PositiveInt
 
 from src.data.config import DataConfig
-from src.models.config import NAMLCNNConfig, NAMLConfig
+from src.models.config import NAMLConfig
 from src.utils.config import RunConfig, StrictModel
 
 
@@ -12,9 +12,9 @@ class LossConfig(StrictModel):
 
 
 class OptimizerConfig(StrictModel):
-    # lr cho phần head; encoder_lr cho phần pretrained được train (layer PhoBERT hoặc word embedding).
+    # AdamW, cùng một lr cho mọi tham số (kể cả word embedding).
     lr: PositiveFloat
-    encoder_lr: PositiveFloat
+    weight_decay: NonNegativeFloat
 
 
 class TrainerConfig(StrictModel):
@@ -32,7 +32,7 @@ class TrainerConfig(StrictModel):
 class TrainConfig(StrictModel):
     run: RunConfig
     data: DataConfig
-    model: Annotated[NAMLConfig | NAMLCNNConfig, Field(discriminator="name")]
+    model: NAMLConfig
     loss: LossConfig
     optimizer: OptimizerConfig
     trainer: TrainerConfig

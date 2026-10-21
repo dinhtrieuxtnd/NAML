@@ -44,16 +44,11 @@ _RESUME_FIXED_FIELDS = {
 
 
 def _build_optimizer(model: torch.nn.Module, config: TrainConfig) -> torch.optim.Optimizer:
-    encoder_ids = {id(p) for p in model.news_encoder.pretrained_parameters()}
     trainable = [p for p in model.parameters() if p.requires_grad]
-    encoder_params = [p for p in trainable if id(p) in encoder_ids]
-    head_params = [p for p in trainable if id(p) not in encoder_ids]
-    groups = [{"params": head_params, "lr": config.optimizer.lr}]
-    if encoder_params:
-        groups.append({"params": encoder_params, "lr": config.optimizer.encoder_lr})
-    logger.info("Trainable params: encoder=%d, head=%d",
-                sum(p.numel() for p in encoder_params), sum(p.numel() for p in head_params))
-    return torch.optim.AdamW(groups)
+    logger.info("Params: total=%d, trainable=%d",
+                sum(p.numel() for p in model.parameters()), sum(p.numel() for p in trainable))
+    return torch.optim.AdamW(
+        trainable, lr=config.optimizer.lr, weight_decay=config.optimizer.weight_decay)
 
 
 def _check_resume_config(config: TrainConfig, run_dir: Path) -> None:
@@ -100,7 +95,7 @@ def _train(config: TrainConfig, run_dir: Path, resume_from: Path | None) -> None
     )
     set_seed(trainer_cfg.seed)
 
-    news = NewsFeatures(data_cfg.processed_dir, data_cfg.text_views, config.model.pretrained_name)
+    news = NewsFeatures(data_cfg.processed_dir, data_cfg.text_views)
     train_dataset = TrainDataset(
         load_split_samples(data_cfg.processed_dir, "train"), news,
         data_cfg.history_len, data_cfg.num_negatives, seed=trainer_cfg.seed)
@@ -109,7 +104,7 @@ def _train(config: TrainConfig, run_dir: Path, resume_from: Path | None) -> None
         news, data_cfg.history_len)
     logger.info("Samples: train=%d, val=%d", len(train_dataset), len(val_dataset))
 
-    model = build_model(config.model, news.num_categories, data_cfg.text_views)
+    model = build_model(config.model, news.num_categories, data_cfg.text_views, news.embedding)
     loss_fn = build_loss(config.loss.name)
     optimizer = _build_optimizer(model, config)
     # generator riêng: DataLoader không lấy seed từ RNG toàn cục của torch (giữ dropout khớp khi resume).

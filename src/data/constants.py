@@ -25,6 +25,12 @@ NEWS_CATEGORY_COLUMN = "category"
 # Row 0 of every news token matrix is the padding news.
 NEWS_PAD_IDX = 0
 
+# Special tokens at the start of the vocabulary; row PAD_TOKEN_IDX of the embedding is 0.
+PAD_TOKEN = "<PAD>"
+UNK_TOKEN = "<UNK>"
+PAD_TOKEN_IDX = 0
+UNK_TOKEN_IDX = 1
+
 # Batch keys, besides HISTORY_COLUMN / CANDIDATES_COLUMN / LABELS_COLUMN.
 NEWS_ROWS_KEY = "news_rows"
 NEWS_TOKENS_KEY = "news_tokens"
@@ -41,6 +47,8 @@ SAMPLES_FILE_TEMPLATE = "{split}_samples.pkl"
 INDEX_MATRIX_FILE = "index_matrix.pkl"
 CATEGORY_DICT_FILE = "category_dict.pkl"
 NEWS_CATEGORY_MAPPING_FILE = "newsId_cateId_mapping.pkl"
+VOCAB_FILE = "vocab.json"
+EMBEDDING_FILE = "embedding.npy"
 # Token matrices are saved as "<text column>.npy".
 TOKEN_MATRIX_FILE_TEMPLATE = "{column}.npy"
 

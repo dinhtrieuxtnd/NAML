@@ -1,4 +1,4 @@
-from pydantic import DirectoryPath, FilePath, NonNegativeInt, PositiveInt
+from pydantic import DirectoryPath, FilePath, NonNegativeInt, PositiveFloat, PositiveInt
 
 from src.utils.config import RunConfig, StrictModel
 
@@ -13,10 +13,15 @@ class InputConfig(StrictModel):
     val_behaviors: FilePath
     test_behaviors: FilePath
     news: FilePath
+    # fastText .vec (cc.vi.300.vec); chỉ đọc lúc preprocess.
+    word_vectors: FilePath
 
 
-class TokenizerConfig(StrictModel):
-    name: str
+class EmbeddingConfig(StrictModel):
+    dim: PositiveInt
+    # Token không có trong word_vectors được khởi tạo N(0, unmatched_init_std).
+    unmatched_init_std: PositiveFloat
+    seed: NonNegativeInt
 
 
 class TextMaxLengthConfig(StrictModel):
@@ -26,14 +31,13 @@ class TextMaxLengthConfig(StrictModel):
 
 
 class TextConfig(StrictModel):
-    lowercase: bool
     max_length: TextMaxLengthConfig
 
 
 class PreprocessConfig(StrictModel):
     run: PreprocessRunConfig
     input: InputConfig
-    tokenizer: TokenizerConfig
+    embedding: EmbeddingConfig
     text: TextConfig
 
 

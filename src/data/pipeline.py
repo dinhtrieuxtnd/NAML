@@ -1,4 +1,5 @@
 import logging
+from collections import Counter
 from pathlib import Path
 
 import numpy as np
@@ -7,6 +8,7 @@ from src.data.config import PreprocessConfig
 from src.data.constants import (
     ARTIFACTS_DIR,
     CATEGORY_DICT_FILE,
+    EMBEDDING_FILE,
     INDEX_MATRIX_FILE,
     NEWS_CATEGORY_COLUMN,
     NEWS_CATEGORY_MAPPING_FILE,
@@ -14,7 +16,9 @@ from src.data.constants import (
     SPLITS,
     STATISTICS_FILE,
     TOKEN_MATRIX_FILE_TEMPLATE,
+    VOCAB_FILE,
 )
+from src.data.embedding import build_embedding_matrix
 from src.data.parser import read_behaviors, read_news
 from src.data.preprocessing import (
     build_category_dict,
@@ -23,6 +27,7 @@ from src.data.preprocessing import (
     build_token_matrix,
     build_train_samples,
 )
+from src.data.text import build_vocab, tokenize
 from src.utils.io import save_json, save_pickle
 from src.utils.run import CONFIG_FILE, LOG_FILE_TEMPLATE, RUN_INFO_FILE, start_run
 
@@ -36,6 +41,8 @@ MANAGED_ARTIFACT_FILES = (
     INDEX_MATRIX_FILE,
     CATEGORY_DICT_FILE,
     NEWS_CATEGORY_MAPPING_FILE,
+    VOCAB_FILE,
+    EMBEDDING_FILE,
 )
 
 
@@ -86,14 +93,28 @@ def _preprocess(config: PreprocessConfig, output_dir: Path) -> None:
     for split, behaviors_df in behaviors.items():
         build = build_train_samples if split == "train" else build_eval_samples
         samples[split], counters[split] = build(behaviors_df)
-        logger.info("%s samples: %d", split, counters[split]["output_samples"])
+        logger.info("%s samples: %d, duplicate history clicks dropped: %d", split,
+                    counters[split]["output_samples"], counters[split]["duplicate_history_clicks"])
         if counters[split]["empty_history"] > 0:
             logger.warning("%s samples with empty history: %d",
                            split, counters[split]["empty_history"])
 
+    tokenized = {column: [tokenize(text) for text in news[column]] for column in text_columns}
+    token_counts = Counter(
+        token for column_tokens in tokenized.values() for tokens in column_tokens
+        for token in tokens)
+    vocab = build_vocab(token_counts)
+    logger.info("Vocab size: %d (incl. special tokens)", len(vocab))
     matrixes, index_matrix, statistics_token_length = build_token_matrix(
-        news, config.text, config.tokenizer.name)
+        news, tokenized, vocab, config.text.max_length.model_dump())
     logger.info("Built token matrix for news articles")
+
+    logger.info("Reading word vectors from %s", config.input.word_vectors)
+    embedding, statistics_embedding = build_embedding_matrix(
+        config.input.word_vectors, vocab, token_counts, config.embedding.dim,
+        config.embedding.seed, config.embedding.unmatched_init_std)
+    logger.info("Embedding coverage: type=%.4f, token=%.4f",
+                statistics_embedding["type_coverage"], statistics_embedding["token_coverage"])
     category_dict = build_category_dict(news)
     newsId_cateId_mapping = build_newsId_cateId_mapping(news, category_dict)
 
@@ -111,6 +132,8 @@ def _preprocess(config: PreprocessConfig, output_dir: Path) -> None:
         save_pickle(obj, artifacts_dir / name)
     for column, matrix in matrixes.items():
         np.save(artifacts_dir / TOKEN_MATRIX_FILE_TEMPLATE.format(column=column), matrix)
+    save_json(vocab, artifacts_dir / VOCAB_FILE)
+    np.save(artifacts_dir / EMBEDDING_FILE, embedding)
     logger.info("Saved artifacts to %s", artifacts_dir)
 
     statistics = {
@@ -120,7 +143,8 @@ def _preprocess(config: PreprocessConfig, output_dir: Path) -> None:
         },
         "samples": counters,
         "text_config": config.text.model_dump(),
-        "tokenizer": config.tokenizer.name,
+        "vocab_size": len(vocab),
+        "embedding": statistics_embedding,
         "token_length": statistics_token_length,
         "num_categories": len(category_dict),
     }

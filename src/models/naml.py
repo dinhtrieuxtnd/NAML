@@ -2,7 +2,8 @@ import torch
 import torch.nn.functional as F
 from einops import einsum, rearrange
 from torch import nn
-from transformers import PreTrainedModel
+
+from src.data.constants import PAD_TOKEN_IDX
 
 
 class AdditiveAttention(nn.Module):
@@ -40,50 +41,73 @@ class CategoryEncoder(nn.Module):
         return self.dense(self.dropout(self.embedding(category)))
 
 
-class NewsEncoder(nn.Module):
-    """Text views: PhoBERT (shared) + word attention per view; category view: embedding + dense.
+class TextCNNEncoder(nn.Module):
+    """One text view as in the NAML paper: CNN + ReLU -> dropout -> word attention."""
 
-    All views are combined by view-level attention into one vector of size hidden_size.
+    def __init__(
+        self, embedding_dim: int, num_filters: int, window_size: int, query_dim: int, dropout: float
+    ) -> None:
+        super().__init__()
+        self.cnn = nn.Conv1d(embedding_dim, num_filters, window_size, padding=window_size // 2)
+        self.dropout = nn.Dropout(dropout)
+        self.attention = AdditiveAttention(num_filters, query_dim)
+
+    def forward(self, embedded: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        """embedded: [U, L, E], mask: [U, L] -> [U, num_filters]."""
+        # [U, L, E] -> [U, E, L]
+        embedded = rearrange(embedded, "u l e -> u e l")
+        # [U, E, L] -> [U, F, L] -> [U, L, F]
+        context = rearrange(torch.relu(self.cnn(embedded)), "u f l -> u l f")
+        # [U, L, F] -> [U, F]
+        return self.attention(self.dropout(context), mask)
+
+
+class NewsEncoder(nn.Module):
+    """NAML news encoder: word embedding (shared by all text views) + CNN per view.
+
+    All views are combined by view-level attention into one vector of size num_filters.
     """
 
     def __init__(
         self,
-        encoder: PreTrainedModel,
+        word_embedding: torch.Tensor,
+        freeze_embedding: bool,
         text_views: list[str],
         num_categories: int,
+        num_filters: int,
+        window_size: int,
         category_dim: int,
         query_dim: int,
         dropout: float,
     ) -> None:
+        """word_embedding: [V, E]."""
         super().__init__()
-        hidden_size = encoder.config.hidden_size
-        self.encoder = encoder
-        self.pad_token_id = encoder.config.pad_token_id
+        self.word_embedding = nn.Embedding.from_pretrained(
+            word_embedding, freeze=freeze_embedding, padding_idx=PAD_TOKEN_IDX)
         self.dropout = nn.Dropout(dropout)
-        self.word_attention = nn.ModuleDict(
-            {view: AdditiveAttention(hidden_size, query_dim) for view in text_views})
-        self.category_encoder = CategoryEncoder(num_categories, category_dim, hidden_size, dropout)
-        self.view_attention = AdditiveAttention(hidden_size, query_dim)
+        self.text_encoders = nn.ModuleDict({
+            view: TextCNNEncoder(
+                word_embedding.shape[1], num_filters, window_size, query_dim, dropout)
+            for view in text_views
+        })
+        self.category_encoder = CategoryEncoder(num_categories, category_dim, num_filters, dropout)
+        self.view_attention = AdditiveAttention(num_filters, query_dim)
 
     def forward(self, tokens: dict[str, torch.Tensor], category: torch.Tensor) -> torch.Tensor:
-        """tokens: {view: [U, L_view]}, category: [U] -> [U, D]."""
+        """tokens: {view: [U, L_view]}, category: [U] -> [U, F]."""
         view_vectors = []
-        for view, attention in self.word_attention.items():
+        for view, text_encoder in self.text_encoders.items():
             input_ids = tokens[view]
-            mask = input_ids != self.pad_token_id
-            # hidden: [U, L_view, D]
-            hidden = self.encoder(input_ids=input_ids, attention_mask=mask).last_hidden_state
-            # [U, L_view, D] -> [U, D]
-            view_vectors.append(attention(self.dropout(hidden), mask))
-        # category: [U] -> [U, D]
+            # [U, L_view] -> [U, L_view, E]
+            embedded = self.dropout(self.word_embedding(input_ids))
+            # [U, L_view, E] -> [U, F]
+            view_vectors.append(text_encoder(embedded, input_ids != PAD_TOKEN_IDX))
+        # category: [U] -> [U, F]
         view_vectors.append(self.category_encoder(category))
-        # views: V x [U, D] -> [U, V, D]
+        # views: V x [U, F] -> [U, V, F]
         views = torch.stack(view_vectors, dim=1)
-        # [U, V, D] -> [U, D]
+        # [U, V, F] -> [U, F]
         return self.view_attention(views)
-
-    def pretrained_parameters(self) -> list[nn.Parameter]:
-        return list(self.encoder.parameters())
 
 
 class NAML(nn.Module):
@@ -128,14 +152,3 @@ class NAML(nn.Module):
         # candidates: [B, C] -> [B, C, D]
         return self.score(user, news_table[candidates])
 
-
-def freeze_encoder(encoder: PreTrainedModel, num_trainable_layers: int) -> None:
-    """Trains only the last `num_trainable_layers` transformer layers; all layers = full finetune."""
-    layers = encoder.encoder.layer
-    if num_trainable_layers > len(layers):
-        raise ValueError(
-            f"num_trainable_layers={num_trainable_layers} > {len(layers)} layers of the encoder")
-    full_finetune = num_trainable_layers == len(layers)
-    encoder.embeddings.requires_grad_(full_finetune)
-    for i, layer in enumerate(layers):
-        layer.requires_grad_(i >= len(layers) - num_trainable_layers)

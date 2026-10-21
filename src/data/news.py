@@ -6,27 +6,23 @@ import torch
 from src.data.constants import (
     ARTIFACTS_DIR,
     CATEGORY_DICT_FILE,
+    EMBEDDING_FILE,
     INDEX_MATRIX_FILE,
     NEWS_CATEGORY_MAPPING_FILE,
     NEWS_PAD_IDX,
     TOKEN_MATRIX_FILE_TEMPLATE,
 )
-from src.utils.config import load_config
 from src.utils.io import load_pickle
-from src.utils.run import CONFIG_FILE
 
 
 class NewsFeatures:
-    """Token matrices and category ids of every news, indexed by row (row NEWS_PAD_IDX = padding)."""
+    """Token matrices and category ids of every news, indexed by row (row NEWS_PAD_IDX = padding),
+    plus the word embedding matrix the token ids index into."""
 
-    def __init__(self, processed_dir: Path, text_views: list[str], pretrained_name: str) -> None:
-        tokenizer_name = load_config(processed_dir / CONFIG_FILE)["tokenizer"]["name"]
-        if tokenizer_name != pretrained_name:
-            raise ValueError(
-                f"{processed_dir} was tokenized with {tokenizer_name}, "
-                f"but model.pretrained_name is {pretrained_name}")
-
+    def __init__(self, processed_dir: Path, text_views: list[str]) -> None:
         artifacts_dir = processed_dir / ARTIFACTS_DIR
+        # embedding: [V, E]
+        self.embedding = torch.from_numpy(np.load(artifacts_dir / EMBEDDING_FILE))
         # tokens[view]: [N + 1, L_view]
         self.tokens = {
             view: torch.from_numpy(

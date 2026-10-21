@@ -3,7 +3,7 @@ run:
   output_root: outputs/smoke
 
 data:
-  processed_dir: data/processed/real_data_v1
+  processed_dir: data/processed/real_data_fasttext_v1
   text_views: [title, sapo, tags]
   history_len: 10
   num_negatives: 4
@@ -14,8 +14,9 @@ data:
 
 model:
   name: naml
-  pretrained_name: vinai/phobert-base-v2
-  num_trainable_layers: 1
+  freeze_embedding: false
+  num_filters: 400
+  window_size: 3
   category_dim: 100
   query_dim: 200
   dropout: 0.2
@@ -25,7 +26,7 @@ loss:
 
 optimizer:
   lr: 1.0e-4
-  encoder_lr: 2.0e-5
+  weight_decay: 0.0
 
 trainer:
   seed: 42

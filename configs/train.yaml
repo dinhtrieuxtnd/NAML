@@ -1,9 +1,9 @@
 run:
-  name: naml_phobert
+  name: naml
   output_root: outputs
 
 data:
-  processed_dir: data/processed/real_data_v1
+  processed_dir: data/processed/real_data_fasttext_v1
   text_views: [title, sapo, tags]
   history_len: 50
   num_negatives: 4
@@ -14,9 +14,9 @@ data:
 
 model:
   name: naml
-  pretrained_name: vinai/phobert-base-v2
-  # 0 = đóng băng PhoBERT, k = train k layer cuối, 12 = finetune toàn bộ.
-  num_trainable_layers: 4
+  freeze_embedding: false
+  num_filters: 400
+  window_size: 3
   category_dim: 100
   query_dim: 200
   dropout: 0.2
@@ -26,7 +26,7 @@ loss:
 
 optimizer:
   lr: 1.0e-4
-  encoder_lr: 2.0e-5
+  weight_decay: 0.0
 
 trainer:
   seed: 42

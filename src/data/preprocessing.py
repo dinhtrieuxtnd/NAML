@@ -1,9 +1,6 @@
 import numpy as np
 import pandas as pd
-from pyvi import ViTokenizer
-from transformers import AutoTokenizer
 
-from src.data.config import TextConfig
 from src.data.constants import (
     CANDIDATES_COLUMN,
     HISTORY_COLUMN,
@@ -13,9 +10,22 @@ from src.data.constants import (
     NEWS_CATEGORY_COLUMN,
     NEWS_ID_COLUMN,
     NEWS_PAD_IDX,
+    PAD_TOKEN_IDX,
     POSITIVE_ITEM_KEY,
     USER_ID_COLUMN,
 )
+from src.data.text import encode
+
+
+def _dedup_history(history: list[int]) -> list[int]:
+    """Keeps only the latest click of each news, in click order."""
+    seen = set()
+    latest_first = []
+    for news_id in reversed(history):
+        if news_id not in seen:
+            seen.add(news_id)
+            latest_first.append(news_id)
+    return latest_first[::-1]
 
 
 def build_train_samples(behaviors_df: pd.DataFrame) -> tuple[list[dict], dict[str, int]]:
@@ -24,11 +34,14 @@ def build_train_samples(behaviors_df: pd.DataFrame) -> tuple[list[dict], dict[st
         "input_impressions": len(behaviors_df),
         "output_samples": 0,
         "empty_history": 0,
+        "duplicate_history_clicks": 0,
     }
     for _, behavior in behaviors_df.iterrows():
         if behavior[HISTORY_COLUMN] == []:
             train_counter["empty_history"] += 1
             continue
+        history = _dedup_history(behavior[HISTORY_COLUMN])
+        train_counter["duplicate_history_clicks"] += len(behavior[HISTORY_COLUMN]) - len(history)
         candidates, labels = behavior[CANDIDATES_COLUMN], behavior[LABELS_COLUMN]
         positive_impressions = [news for news, label in zip(candidates, labels) if label == 1]
         negative_impressions = [news for news, label in zip(candidates, labels) if label == 0]
@@ -38,7 +51,7 @@ def build_train_samples(behaviors_df: pd.DataFrame) -> tuple[list[dict], dict[st
                 {
                     IMPRESSION_ID_COLUMN: behavior[IMPRESSION_ID_COLUMN],
                     USER_ID_COLUMN: behavior[USER_ID_COLUMN],
-                    HISTORY_COLUMN: behavior[HISTORY_COLUMN],
+                    HISTORY_COLUMN: history,
                     NEGATIVE_POOL_KEY: negative_impressions,
                     POSITIVE_ITEM_KEY: pos_item,
                 }
@@ -53,16 +66,19 @@ def build_eval_samples(behaviors_df: pd.DataFrame) -> tuple[list[dict], dict[str
         "input_impressions": len(behaviors_df),
         "output_samples": 0,
         "empty_history": 0,
+        "duplicate_history_clicks": 0,
     }
     for _, behavior in behaviors_df.iterrows():
         if behavior[HISTORY_COLUMN] == []:
             eval_counter["empty_history"] += 1
             continue
+        history = _dedup_history(behavior[HISTORY_COLUMN])
+        eval_counter["duplicate_history_clicks"] += len(behavior[HISTORY_COLUMN]) - len(history)
         eval_samples.append(
             {
                 IMPRESSION_ID_COLUMN: behavior[IMPRESSION_ID_COLUMN],
                 USER_ID_COLUMN: behavior[USER_ID_COLUMN],
-                HISTORY_COLUMN: behavior[HISTORY_COLUMN],
+                HISTORY_COLUMN: history,
                 CANDIDATES_COLUMN: behavior[CANDIDATES_COLUMN],
                 LABELS_COLUMN: behavior[LABELS_COLUMN],
             }
@@ -72,47 +88,35 @@ def build_eval_samples(behaviors_df: pd.DataFrame) -> tuple[list[dict], dict[str
 
 
 def build_token_matrix(
-    news_df: pd.DataFrame, text_config: TextConfig, tokenizer_name: str
+    news_df: pd.DataFrame,
+    tokenized: dict[str, list[list[str]]],
+    vocab: dict[str, int],
+    max_length: dict[str, int],
 ) -> tuple[dict[str, np.ndarray], dict[int, int], dict[str, dict]]:
-    """Returns one int32 matrix [N + 1, L] per text column.
+    """Returns one int32 matrix [N + 1, L] per text column, rows in news_df order after row 0.
 
-    Row NEWS_PAD_IDX is filled entirely with pad_token_id, so the attention mask of any
-    row is `matrix != pad_token_id` and the padding news has no real token.
+    tokenized[column] holds the tokens of each news. Row NEWS_PAD_IDX is filled entirely with
+    PAD_TOKEN_IDX, so the mask of any row is `matrix != PAD_TOKEN_IDX`.
     """
     matrixes = {}
     statistics_token_length = {}
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
-    for column, max_length in text_config.max_length.model_dump().items():
-        texts = news_df[column]
-        if text_config.lowercase:
-            texts = texts.str.lower()
-        texts = texts.apply(ViTokenizer.tokenize).tolist()
-
-        encoded = tokenizer(
-            texts,
-            max_length=max_length,
-            truncation=True,
-            padding="max_length",
-            return_tensors="np",
-        )
+    for column, length in max_length.items():
         # pad_row: [1, L]
-        pad_row = np.full((1, max_length), tokenizer.pad_token_id)
+        pad_row = np.full((1, length), PAD_TOKEN_IDX, dtype=np.int32)
+        # encoded: N x [L] -> [N, L]
+        encoded = np.stack([encode(tokens, vocab, length) for tokens in tokenized[column]])
         # pad_row: [1, L], encoded: [N, L] -> [N + 1, L]
-        matrixes[column] = np.concatenate(
-            [pad_row, encoded["input_ids"]], axis=0
-        ).astype(np.int32)
+        matrixes[column] = np.concatenate([pad_row, encoded], axis=0)
 
-        token_length = pd.Series(
-            [len(ids) for ids in tokenizer(texts, truncation=False)["input_ids"]]
-        )
+        token_length = pd.Series([len(tokens) for tokens in tokenized[column]])
         statistics_token_length[f"{column}_length"] = {
             "min": token_length.min(),
             "max": token_length.max(),
             "mean": token_length.mean(),
             "std": token_length.std(),
             "p95": token_length.quantile(0.95),
-            "max_length": max_length,
-            "truncated_ratio": (token_length > max_length).mean(),
+            "max_length": length,
+            "truncated_ratio": (token_length > length).mean(),
         }
     first_idx = NEWS_PAD_IDX + 1
     index_matrix = dict(

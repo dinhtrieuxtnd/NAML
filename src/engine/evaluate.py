@@ -98,12 +98,12 @@ def run_evaluation(checkpoint_dir: Path, split: str) -> dict[str, float]:
     data_cfg = config.data
     accelerator = Accelerator(mixed_precision=config.trainer.mixed_precision)
 
-    news = NewsFeatures(data_cfg.processed_dir, data_cfg.text_views, config.model.pretrained_name)
+    news = NewsFeatures(data_cfg.processed_dir, data_cfg.text_views)
     dataset = EvalDataset(
         load_split_samples(data_cfg.processed_dir, split)[:data_cfg.max_eval_impressions],
         news, data_cfg.history_len)
     model = accelerator.prepare(
-        build_model(config.model, news.num_categories, data_cfg.text_views))
+        build_model(config.model, news.num_categories, data_cfg.text_views, news.embedding))
     accelerator.load_state(str(checkpoint_dir))
     logger.info("Loaded %s, %s impressions=%d", checkpoint_dir, split, len(dataset))
 

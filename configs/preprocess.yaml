@@ -1,5 +1,5 @@
 run:
-  name: real_data_v1
+  name: real_data_fasttext_v1
   output_root: data/processed
   overwrite: false
 
@@ -8,13 +8,16 @@ input:
   val_behaviors: data/raw/behaviors/val_behaviors.csv
   test_behaviors: data/raw/behaviors/test_behaviors.csv
   news: data/raw/news/news.csv
+  word_vectors: data/raw/fasttext/cc.vi.300.vec
 
-tokenizer:
-  name: vinai/phobert-base-v2
+embedding:
+  dim: 300
+  unmatched_init_std: 0.1
+  seed: 42
 
+# Độ dài tính theo token (âm tiết / dấu câu); chỉnh theo p95 trong statistics.json.
 text:
-  lowercase: true
   max_length:
     title: 32
-    sapo: 64
+    sapo: 72
     tags: 32
