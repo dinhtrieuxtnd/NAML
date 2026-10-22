@@ -87,12 +87,14 @@ def evaluate(
         news_table[rows] = vectors
 
     auroc = BinaryAUROC().to(accelerator.device)
+    # Retrieval metrics để trên CPU: compute() lặp Python qua từng impression, trên GPU mỗi vòng
+    # tốn vài kernel launch + sync nên chậm hơn CPU khoảng 5 lần.
     retrieval = MetricCollection({
         "impression_auc": RetrievalAUROC(empty_target_action="skip"),
         "mrr": RetrievalMRR(empty_target_action="skip"),
         "ndcg@5": RetrievalNormalizedDCG(top_k=5, empty_target_action="skip"),
         "ndcg@10": RetrievalNormalizedDCG(top_k=10, empty_target_action="skip"),
-    }).to(accelerator.device)
+    })
 
     eval_loader = accelerator.prepare(DataLoader(
         dataset, batch_size=batch_size, collate_fn=EvalCollator(), num_workers=num_workers))
@@ -108,7 +110,7 @@ def evaluate(
         # [B, C_max] -> [num_valid_candidates]
         preds, labels, valid_indexes = scores[mask], batch[LABELS_COLUMN][mask], indexes[mask]
         auroc.update(preds, labels)
-        retrieval.update(preds, labels, indexes=valid_indexes)
+        retrieval.update(preds.cpu(), labels.cpu(), indexes=valid_indexes.cpu())
         if collect_predictions:
             # positions: [C_max] -> [B, C_max] -> [num_valid_candidates]
             positions = repeat(torch.arange(scores.shape[1], device=scores.device),
