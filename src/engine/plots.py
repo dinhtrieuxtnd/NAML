@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.ticker import MaxNLocator  # noqa: E402
 
 from src.data.constants import METRIC_NAMES  # noqa: E402
-from src.utils.run import LOSS_PLOT_FILE, LR_PLOT_FILE, METRICS_PLOT_FILE  # noqa: E402
+from src.utils.run import LOSS_PLOT_FILE, LR_PLOT_FILE, METRIC_PLOT_FILE_TEMPLATE  # noqa: E402
 
 
 def _save(fig: plt.Figure, path: Path) -> None:
@@ -19,7 +19,8 @@ def _save(fig: plt.Figure, path: Path) -> None:
 
 
 def plot_history(history: list[dict], best_epoch: int | None, plots_dir: Path) -> None:
-    """Redraws loss.png, metrics.png (best epoch marked) and lr.png from history.json rows."""
+    """Redraws loss.png, val_<metric>.png per metric (best epoch marked) and lr.png from
+    history.json rows."""
     plots_dir.mkdir(parents=True, exist_ok=True)
     epochs = [row["epoch"] for row in history]
 
@@ -29,15 +30,16 @@ def plot_history(history: list[dict], best_epoch: int | None, plots_dir: Path) -
     ax.grid(alpha=0.3)
     _save(fig, plots_dir / LOSS_PLOT_FILE)
 
-    fig, ax = plt.subplots(figsize=(7, 4))
+    # Mỗi metric một hình riêng với trục y riêng, để thay đổi nhỏ của từng metric vẫn nhìn rõ.
     for metric in METRIC_NAMES:
-        ax.plot(epochs, [row[metric] for row in history], marker="o", label=metric)
-    if best_epoch is not None:
-        ax.axvline(best_epoch, color="gray", linestyle="--", label=f"best (epoch {best_epoch})")
-    ax.set(xlabel="epoch", ylabel="value", title="Validation metrics")
-    ax.grid(alpha=0.3)
-    ax.legend()
-    _save(fig, plots_dir / METRICS_PLOT_FILE)
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.plot(epochs, [row[metric] for row in history], marker="o")
+        if best_epoch is not None:
+            ax.axvline(best_epoch, color="gray", linestyle="--", label=f"best (epoch {best_epoch})")
+            ax.legend()
+        ax.set(xlabel="epoch", ylabel=metric, title=f"Validation {metric}")
+        ax.grid(alpha=0.3)
+        _save(fig, plots_dir / METRIC_PLOT_FILE_TEMPLATE.format(metric=metric))
 
     fig, ax = plt.subplots(figsize=(6, 4))
     ax.plot(epochs, [row["lr"] for row in history], marker="o")

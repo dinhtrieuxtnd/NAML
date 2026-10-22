@@ -220,7 +220,7 @@ Thư mục run `outputs/<run.name>_<timestamp>/`:
 ```
 config.yaml, run_info.json, train.log
 history.json                # mỗi epoch một dòng: epoch, train_loss, lr, time, các metric val
-plots/                      # loss.png, metrics.png (đánh dấu epoch tốt nhất), lr.png; vẽ lại sau mỗi epoch
+plots/                      # loss.png, val_<metric>.png mỗi metric một hình (đánh dấu epoch tốt nhất), lr.png; vẽ lại sau mỗi epoch
 checkpoints/best/           # tốt nhất theo trainer.monitor, kèm metrics.json
 checkpoints/latest/         # ghi đè mỗi trainer.save_every_steps step và cuối mỗi epoch, dùng để resume
 evaluation_<checkpoint>/    # tạo bởi scripts/evaluate.py
