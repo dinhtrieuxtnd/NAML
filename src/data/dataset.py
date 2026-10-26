@@ -20,13 +20,19 @@ from src.utils.io import load_pickle
 
 
 def load_split_samples(processed_dir: Path, split: str) -> list[dict]:
-    return load_pickle(processed_dir / ARTIFACTS_DIR / SAMPLES_FILE_TEMPLATE.format(split=split))
+    return load_pickle(
+        processed_dir / ARTIFACTS_DIR / SAMPLES_FILE_TEMPLATE.format(split=split)
+    )
 
 
-def _history_rows(news: NewsFeatures, history: list[int], history_len: int) -> torch.Tensor:
+def _history_rows(
+    news: NewsFeatures, history: list[int], history_len: int
+) -> torch.Tensor:
     """Keeps the last `history_len` clicks and right-pads with NEWS_PAD_IDX -> [history_len]."""
     rows = news.to_rows(history[-history_len:])
-    return torch.tensor(rows + [NEWS_PAD_IDX] * (history_len - len(rows)), dtype=torch.long)
+    return torch.tensor(
+        rows + [NEWS_PAD_IDX] * (history_len - len(rows)), dtype=torch.long
+    )
 
 
 class TrainDataset(Dataset):
@@ -68,7 +74,9 @@ class TrainDataset(Dataset):
             negatives = rng.choices(pool, k=self.num_negatives)
         candidates = self.news.to_rows([sample[POSITIVE_ITEM_KEY], *negatives])
         return {
-            HISTORY_COLUMN: _history_rows(self.news, sample[HISTORY_COLUMN], self.history_len),
+            HISTORY_COLUMN: _history_rows(
+                self.news, sample[HISTORY_COLUMN], self.history_len
+            ),
             CANDIDATES_COLUMN: torch.tensor(candidates, dtype=torch.long),
         }
 
@@ -76,7 +84,9 @@ class TrainDataset(Dataset):
 class EvalDataset(Dataset):
     """Each item: one impression with history [N], candidates [C] and labels [C]."""
 
-    def __init__(self, samples: list[dict], news: NewsFeatures, history_len: int) -> None:
+    def __init__(
+        self, samples: list[dict], news: NewsFeatures, history_len: int
+    ) -> None:
         self.samples = samples
         self.news = news
         self.history_len = history_len
@@ -87,9 +97,12 @@ class EvalDataset(Dataset):
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor | int]:
         sample = self.samples[idx]
         return {
-            HISTORY_COLUMN: _history_rows(self.news, sample[HISTORY_COLUMN], self.history_len),
+            HISTORY_COLUMN: _history_rows(
+                self.news, sample[HISTORY_COLUMN], self.history_len
+            ),
             CANDIDATES_COLUMN: torch.tensor(
-                self.news.to_rows(sample[CANDIDATES_COLUMN]), dtype=torch.long),
+                self.news.to_rows(sample[CANDIDATES_COLUMN]), dtype=torch.long
+            ),
             LABELS_COLUMN: torch.tensor(sample[LABELS_COLUMN], dtype=torch.long),
             INDEXES_KEY: idx,
         }
@@ -98,7 +111,7 @@ class EvalDataset(Dataset):
         """Sorted rows of every news this split needs (history + candidates), without padding."""
         rows = set()
         for sample in self.samples:
-            rows.update(self.news.to_rows(sample[HISTORY_COLUMN][-self.history_len:]))
+            rows.update(self.news.to_rows(sample[HISTORY_COLUMN][-self.history_len :]))
             rows.update(self.news.to_rows(sample[CANDIDATES_COLUMN]))
         return sorted(rows)
 

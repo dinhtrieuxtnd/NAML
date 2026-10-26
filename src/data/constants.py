@@ -1,6 +1,7 @@
 IMPRESSION_ID_COLUMN = "impression_id"
 USER_ID_COLUMN = "user_id"
 TIME_COLUMN = "time"
+TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 HISTORY_COLUMN = "history"
 IMPRESSIONS_COLUMN = "impressions"
 BEHAVIORS_COLUMNS = [
@@ -60,4 +61,3 @@ VOCAB_FILE = "vocab.json"
 EMBEDDING_FILE = "embedding.npy"
 # Token matrices are saved as "<text column>.npy".
 TOKEN_MATRIX_FILE_TEMPLATE = "{column}.npy"
-

@@ -16,7 +16,9 @@ from src.utils.config import load_config
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train NAML")
     parser.add_argument("--config", type=Path, required=True)
-    parser.add_argument("--resume", type=Path, help="Checkpoint directory to continue from")
+    parser.add_argument(
+        "--resume", type=Path, help="Checkpoint directory to continue from"
+    )
     args = parser.parse_args()
 
     config = TrainConfig.model_validate(load_config(args.config))

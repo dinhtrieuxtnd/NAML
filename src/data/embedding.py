@@ -20,8 +20,11 @@ def build_embedding_matrix(
     are drawn from N(0, unmatched_init_std). The PAD row is 0. Returns the float32 matrix
     [V, dim] and its coverage, by distinct token and by token occurrence (token_counts).
     """
-    matrix = np.random.default_rng(seed).normal(
-        0.0, unmatched_init_std, size=(len(vocab), dim)).astype(np.float32)
+    matrix = (
+        np.random.default_rng(seed)
+        .normal(0.0, unmatched_init_std, size=(len(vocab), dim))
+        .astype(np.float32)
+    )
     matrix[PAD_TOKEN_IDX] = 0.0
 
     wanted = set(vocab) - {PAD_TOKEN, UNK_TOKEN}
@@ -29,7 +32,9 @@ def build_embedding_matrix(
     with vectors_path.open("rb") as file:
         header = file.readline().split()
         if len(header) != 2 or int(header[1]) != dim:
-            raise ValueError(f"{vectors_path}: header {header} does not declare dimension {dim}")
+            raise ValueError(
+                f"{vectors_path}: header {header} does not declare dimension {dim}"
+            )
         for line_number, line in enumerate(file, start=2):
             # Chỉ decode phần token; vector chỉ parse khi token cần dùng.
             raw_token, _, values = line.rstrip(b"\r\n ").partition(b" ")
@@ -47,7 +52,8 @@ def build_embedding_matrix(
             vector = np.array(values.split(), dtype=np.float32)
             if vector.shape != (dim,):
                 raise ValueError(
-                    f"{vectors_path}:{line_number}: expected {dim} values, got {vector.shape[0]}")
+                    f"{vectors_path}:{line_number}: expected {dim} values, got {vector.shape[0]}"
+                )
             matrix[vocab[token]] = vector
 
     matched = exact | case_variant

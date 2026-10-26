@@ -4,7 +4,6 @@ notebooks/
 server/
 raw_log
 .env
-documents/
 create_data
 outputs/
 schema.txt

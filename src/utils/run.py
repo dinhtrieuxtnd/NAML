@@ -4,19 +4,19 @@ import logging
 import platform
 import subprocess
 import sys
-from collections.abc import Iterator
+from collections.abc import Generator
 from pathlib import Path
 
 import torch
 from accelerate import PartialState
 from pydantic import BaseModel
 
-from src.utils.config import save_config
+from src.utils.config import RunConfig, save_config
 from src.utils.io import load_json, save_json
 
 logger = logging.getLogger(__name__)
 
-# Layout of a run directory (preprocess, train), shared by every stage.
+# Layout of a run directory (preprocess, train, baselines), shared by every stage.
 CONFIG_FILE = "config.yaml"
 RUN_INFO_FILE = "run_info.json"
 LOG_FILE_TEMPLATE = "{stage}.log"
@@ -52,6 +52,12 @@ def setup_logging(log_file: Path | None) -> None:
     logging.getLogger("src").setLevel(logging.INFO)
 
 
+def new_run_dir(run: RunConfig) -> Path:
+    """output_root/<name>_<timestamp> for a new experiment run (train, baselines)."""
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    return run.output_root / f"{run.name}_{timestamp}"
+
+
 def _git_commit() -> str | None:
     try:
         result = subprocess.run(
@@ -75,7 +81,7 @@ def _environment() -> dict:
 
 
 @contextlib.contextmanager
-def start_run(stage: str, run_dir: Path, config: BaseModel, resume: bool) -> Iterator[None]:
+def start_run(stage: str, run_dir: Path, config: BaseModel, resume: bool) -> Generator[None]:
     """Sets up a run directory and records the run in run_info.json.
 
     A new run writes config.yaml (never overwritten afterwards); a resumed run keeps it.

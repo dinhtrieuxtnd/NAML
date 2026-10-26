@@ -10,7 +10,10 @@ from src.models.naml import NAML, NewsEncoder
 
 
 def build_naml(
-    config: NAMLConfig, num_categories: int, text_views: list[str], word_embedding: torch.Tensor
+    config: NAMLConfig,
+    num_categories: int,
+    text_views: list[str],
+    word_embedding: torch.Tensor,
 ) -> NAML:
     """word_embedding: [V, E]."""
     news_encoder = NewsEncoder(
@@ -37,10 +40,15 @@ LOSS_REGISTRY: dict[str, Callable[[], nn.Module]] = {
 
 
 def build_model(
-    config: NAMLConfig, num_categories: int, text_views: list[str], word_embedding: torch.Tensor
+    config: NAMLConfig,
+    num_categories: int,
+    text_views: list[str],
+    word_embedding: torch.Tensor,
 ) -> nn.Module:
     """word_embedding: [V, E]."""
-    return MODEL_REGISTRY[config.name](config, num_categories, text_views, word_embedding)
+    return MODEL_REGISTRY[config.name](
+        config, num_categories, text_views, word_embedding
+    )
 
 
 def build_loss(name: str) -> nn.Module:

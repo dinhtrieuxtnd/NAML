@@ -7,7 +7,11 @@ import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.ticker import MaxNLocator  # noqa: E402
 
 from src.data.constants import METRIC_NAMES  # noqa: E402
-from src.utils.run import LOSS_PLOT_FILE, LR_PLOT_FILE, METRIC_PLOT_FILE_TEMPLATE  # noqa: E402
+from src.utils.run import (
+    LOSS_PLOT_FILE,
+    LR_PLOT_FILE,
+    METRIC_PLOT_FILE_TEMPLATE,
+)  # noqa: E402
 
 
 def _save(fig: plt.Figure, path: Path) -> None:
@@ -35,7 +39,12 @@ def plot_history(history: list[dict], best_epoch: int | None, plots_dir: Path) -
         fig, ax = plt.subplots(figsize=(6, 4))
         ax.plot(epochs, [row[metric] for row in history], marker="o")
         if best_epoch is not None:
-            ax.axvline(best_epoch, color="gray", linestyle="--", label=f"best (epoch {best_epoch})")
+            ax.axvline(
+                best_epoch,
+                color="gray",
+                linestyle="--",
+                label=f"best (epoch {best_epoch})",
+            )
             ax.legend()
         ax.set(xlabel="epoch", ylabel=metric, title=f"Validation {metric}")
         ax.grid(alpha=0.3)

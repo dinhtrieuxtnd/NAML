@@ -19,12 +19,15 @@ def build_vocab(token_counts: Counter[str]) -> dict[str, int]:
     """PAD and UNK first, then tokens by decreasing count, ties broken alphabetically."""
     tokens = sorted(token_counts, key=lambda token: (-token_counts[token], token))
     special = {PAD_TOKEN: PAD_TOKEN_IDX, UNK_TOKEN: UNK_TOKEN_IDX}
-    return {**special, **{token: i for i, token in enumerate(tokens, start=len(special))}}
+    return {
+        **special,
+        **{token: i for i, token in enumerate(tokens, start=len(special))},
+    }
 
 
 def encode(tokens: list[str], vocab: dict[str, int], max_length: int) -> np.ndarray:
     """Truncates to max_length and right-pads with PAD_TOKEN_IDX -> int32 [max_length]."""
     ids = np.full(max_length, PAD_TOKEN_IDX, dtype=np.int32)
     truncated = tokens[:max_length]
-    ids[:len(truncated)] = [vocab.get(token, UNK_TOKEN_IDX) for token in truncated]
+    ids[: len(truncated)] = [vocab.get(token, UNK_TOKEN_IDX) for token in truncated]
     return ids

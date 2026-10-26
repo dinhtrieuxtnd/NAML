@@ -1,4 +1,3 @@
-import datetime
 import logging
 import time
 from pathlib import Path
@@ -38,6 +37,7 @@ from src.utils.run import (
     METRICS_FILE,
     PLOTS_DIR,
     TRAINING_STATE_FILE,
+    new_run_dir,
     start_run,
 )
 
@@ -50,8 +50,14 @@ _RESUME_FIXED_FIELDS = {
     "loss": True,
     "optimizer": True,
     "scheduler": True,
-    "data": {"processed_dir", "text_views", "history_len", "num_negatives", "train_batch_size",
-             "max_train_samples"},
+    "data": {
+        "processed_dir",
+        "text_views",
+        "history_len",
+        "num_negatives",
+        "train_batch_size",
+        "max_train_samples",
+    },
     "trainer": {"seed", "gradient_accumulation_steps", "monitor"},
 }
 
@@ -59,12 +65,18 @@ _RESUME_FIXED_FIELDS = {
 _LOG_ABBREVIATIONS = {"impression_auc": "imp_auc"}
 
 
-def _build_optimizer(model: torch.nn.Module, config: TrainConfig) -> torch.optim.Optimizer:
+def _build_optimizer(
+    model: torch.nn.Module, config: TrainConfig
+) -> torch.optim.Optimizer:
     trainable = [p for p in model.parameters() if p.requires_grad]
-    logger.info("Params: total=%d, trainable=%d",
-                sum(p.numel() for p in model.parameters()), sum(p.numel() for p in trainable))
+    logger.info(
+        "Params: total=%d, trainable=%d",
+        sum(p.numel() for p in model.parameters()),
+        sum(p.numel() for p in trainable),
+    )
     return torch.optim.AdamW(
-        trainable, lr=config.optimizer.lr, weight_decay=config.optimizer.weight_decay)
+        trainable, lr=config.optimizer.lr, weight_decay=config.optimizer.weight_decay
+    )
 
 
 def _current_lr(optimizer: torch.optim.Optimizer) -> float:
@@ -78,8 +90,17 @@ def _initial_state() -> dict:
     current epoch; best_value / best_epoch / bad_epochs: early stopping; history: one row per
     finished epoch (as in history.json). best_epoch and history epochs are 1-based.
     """
-    return {"epoch": 0, "batches_in_epoch": 0, "global_step": 0, "loss_sum": 0.0, "loss_count": 0,
-            "best_value": None, "best_epoch": None, "bad_epochs": 0, "history": []}
+    return {
+        "epoch": 0,
+        "batches_in_epoch": 0,
+        "global_step": 0,
+        "loss_sum": 0.0,
+        "loss_count": 0,
+        "best_value": None,
+        "best_epoch": None,
+        "bad_epochs": 0,
+        "history": [],
+    }
 
 
 def _check_resume_config(config: TrainConfig, run_dir: Path) -> None:
@@ -93,7 +114,9 @@ def _check_resume_config(config: TrainConfig, run_dir: Path) -> None:
         != (saved_dump[section] if field is None else saved_dump[section][field])
     ]
     if mismatches:
-        raise ValueError(f"Cannot resume {run_dir}: config differs in {', '.join(mismatches)}")
+        raise ValueError(
+            f"Cannot resume {run_dir}: config differs in {', '.join(mismatches)}"
+        )
 
 
 def run_training(config: TrainConfig, resume_from: Path | None = None) -> None:
@@ -103,8 +126,7 @@ def run_training(config: TrainConfig, resume_from: Path | None = None) -> None:
     the checkpoint's run directory.
     """
     if resume_from is None:
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        run_dir = config.run.output_root / f"{config.run.name}_{timestamp}"
+        run_dir = new_run_dir(config.run)
     else:
         run_dir = resume_from.parent.parent
     with start_run("train", run_dir, config, resume=resume_from is not None):
@@ -123,35 +145,64 @@ def _train(config: TrainConfig, run_dir: Path, resume_from: Path | None) -> None
         gradient_accumulation_steps=trainer_cfg.gradient_accumulation_steps,
         # Thứ tự shuffle chỉ phụ thuộc (seed, epoch) để resume giữa epoch bỏ qua đúng các batch đã train.
         dataloader_config=DataLoaderConfiguration(
-            use_seedable_sampler=True, data_seed=trainer_cfg.seed),
+            use_seedable_sampler=True, data_seed=trainer_cfg.seed
+        ),
     )
     set_seed(trainer_cfg.seed)
-    logger.info("Run %s: device=%s, processes=%d, mixed_precision=%s", config.run.name,
-                accelerator.device, accelerator.num_processes, trainer_cfg.mixed_precision)
+    logger.info(
+        "Run %s: device=%s, processes=%d, mixed_precision=%s",
+        config.run.name,
+        accelerator.device,
+        accelerator.num_processes,
+        trainer_cfg.mixed_precision,
+    )
 
     statistics = load_json(data_cfg.processed_dir / STATISTICS_FILE)
-    logger.info("Embedding: vocab=%d, token coverage=%.4f",
-                statistics["vocab_size"], statistics["embedding"]["token_coverage"])
+    logger.info(
+        "Embedding: vocab=%d, token coverage=%.4f",
+        statistics["vocab_size"],
+        statistics["embedding"]["token_coverage"],
+    )
     news = NewsFeatures(data_cfg.processed_dir, data_cfg.text_views)
     train_dataset = TrainDataset(
-        load_split_samples(data_cfg.processed_dir, "train")[:data_cfg.max_train_samples], news,
-        data_cfg.history_len, data_cfg.num_negatives, seed=trainer_cfg.seed)
+        load_split_samples(data_cfg.processed_dir, "train")[
+            : data_cfg.max_train_samples
+        ],
+        news,
+        data_cfg.history_len,
+        data_cfg.num_negatives,
+        seed=trainer_cfg.seed,
+    )
     val_dataset = EvalDataset(
-        load_split_samples(data_cfg.processed_dir, "val")[:data_cfg.max_eval_impressions],
-        news, data_cfg.history_len)
+        load_split_samples(data_cfg.processed_dir, "val")[
+            : data_cfg.max_eval_impressions
+        ],
+        news,
+        data_cfg.history_len,
+    )
     logger.info("Samples: train=%d, val=%d", len(train_dataset), len(val_dataset))
 
-    model = build_model(config.model, news.num_categories, data_cfg.text_views, news.embedding)
+    model = build_model(
+        config.model, news.num_categories, data_cfg.text_views, news.embedding
+    )
     loss_fn = build_loss(config.loss.name)
     optimizer = _build_optimizer(model, config)
     scheduler = ReduceLROnPlateau(
-        optimizer, mode="max", factor=config.scheduler.factor,
-        patience=config.scheduler.patience, min_lr=config.scheduler.min_lr)
+        optimizer,
+        mode="max",
+        factor=config.scheduler.factor,
+        patience=config.scheduler.patience,
+        min_lr=config.scheduler.min_lr,
+    )
     # generator riêng: DataLoader không lấy seed từ RNG toàn cục của torch (giữ dropout khớp khi resume).
     train_loader = DataLoader(
-        train_dataset, batch_size=data_cfg.train_batch_size, shuffle=True,
-        collate_fn=TrainCollator(news), num_workers=data_cfg.num_workers,
-        generator=torch.Generator().manual_seed(trainer_cfg.seed))
+        train_dataset,
+        batch_size=data_cfg.train_batch_size,
+        shuffle=True,
+        collate_fn=TrainCollator(news),
+        num_workers=data_cfg.num_workers,
+        generator=torch.Generator().manual_seed(trainer_cfg.seed),
+    )
     model, optimizer, train_loader = accelerator.prepare(model, optimizer, train_loader)
     # Scheduler step theo epoch nên không qua prepare, chỉ cần lưu/nạp cùng checkpoint.
     accelerator.register_for_checkpointing(scheduler)
@@ -160,8 +211,13 @@ def _train(config: TrainConfig, run_dir: Path, resume_from: Path | None) -> None
     if resume_from is not None:
         accelerator.load_state(str(resume_from))
         state = load_json(resume_from / TRAINING_STATE_FILE)
-        logger.info("Resumed from %s: epoch=%d, batch=%d, step=%d", resume_from,
-                    state["epoch"] + 1, state["batches_in_epoch"], state["global_step"])
+        logger.info(
+            "Resumed from %s: epoch=%d, batch=%d, step=%d",
+            resume_from,
+            state["epoch"] + 1,
+            state["batches_in_epoch"],
+            state["global_step"],
+        )
 
     def save_checkpoint(name: str, metrics: dict[str, float] | None = None) -> None:
         checkpoint_dir = checkpoints_dir / name
@@ -173,8 +229,14 @@ def _train(config: TrainConfig, run_dir: Path, resume_from: Path | None) -> None
                 save_json(metrics, checkpoint_dir / METRICS_FILE)
 
     stop_training = False
-    if trainer_cfg.max_train_steps is not None and state["global_step"] >= trainer_cfg.max_train_steps:
-        logger.info("Already at step %d >= max_train_steps, nothing to train", state["global_step"])
+    if (
+        trainer_cfg.max_train_steps is not None
+        and state["global_step"] >= trainer_cfg.max_train_steps
+    ):
+        logger.info(
+            "Already at step %d >= max_train_steps, nothing to train",
+            state["global_step"],
+        )
         stop_training = True
     elif state["bad_epochs"] >= config.early_stopping.patience:
         logger.info("Early stopping was already triggered, nothing to train")
@@ -187,13 +249,19 @@ def _train(config: TrainConfig, run_dir: Path, resume_from: Path | None) -> None
                 break
             epoch_start = time.perf_counter()
             model.train()
-            epoch_loader = accelerator.skip_first_batches(train_loader, state["batches_in_epoch"])
+            epoch_loader = accelerator.skip_first_batches(
+                train_loader, state["batches_in_epoch"]
+            )
             epoch_loader.set_epoch(epoch)
             train_dataset.set_epoch(epoch)
             progress = tqdm(
-                epoch_loader, desc=f"epoch {epoch + 1}", total=len(train_loader),
-                initial=state["batches_in_epoch"], leave=False,
-                disable=None if accelerator.is_main_process else True)
+                epoch_loader,
+                desc=f"epoch {epoch + 1}",
+                total=len(train_loader),
+                initial=state["batches_in_epoch"],
+                leave=False,
+                disable=None if accelerator.is_main_process else True,
+            )
             for batch in progress:
                 with accelerator.accumulate(model):
                     # scores: [B, K + 1], the positive is at position 0
@@ -204,14 +272,19 @@ def _train(config: TrainConfig, run_dir: Path, resume_from: Path | None) -> None
                         history_mask=batch[HISTORY_MASK_KEY],
                         candidates=batch[CANDIDATES_COLUMN],
                     )
-                    target = torch.zeros(scores.shape[0], dtype=torch.long, device=scores.device)
+                    target = torch.zeros(
+                        scores.shape[0], dtype=torch.long, device=scores.device
+                    )
                     loss = loss_fn(scores, target)
                     if not torch.isfinite(loss):
                         raise FloatingPointError(
-                            f"Non-finite loss {loss.item()} at step {state['global_step']}")
+                            f"Non-finite loss {loss.item()} at step {state['global_step']}"
+                        )
                     accelerator.backward(loss)
                     if accelerator.sync_gradients:
-                        accelerator.clip_grad_norm_(model.parameters(), trainer_cfg.max_grad_norm)
+                        accelerator.clip_grad_norm_(
+                            model.parameters(), trainer_cfg.max_grad_norm
+                        )
                     optimizer.step()
                     optimizer.zero_grad()
 
@@ -221,18 +294,27 @@ def _train(config: TrainConfig, run_dir: Path, resume_from: Path | None) -> None
                 state["loss_count"] += 1
                 state["batches_in_epoch"] += 1
                 progress.set_postfix(
-                    loss=f"{batch_loss:.4f}", lr=f"{_current_lr(optimizer):.2e}", refresh=False)
+                    loss=f"{batch_loss:.4f}",
+                    lr=f"{_current_lr(optimizer):.2e}",
+                    refresh=False,
+                )
                 if accelerator.sync_gradients:
                     state["global_step"] += 1
                     if state["global_step"] == trainer_cfg.max_train_steps:
                         # Dừng giữa epoch, không evaluate: resume train tiếp rồi mới đóng epoch.
                         save_checkpoint(LATEST_CHECKPOINT)
-                        logger.info("Reached max_train_steps=%d at epoch %d, batch %d",
-                                    state["global_step"], epoch + 1, state["batches_in_epoch"])
+                        logger.info(
+                            "Reached max_train_steps=%d at epoch %d, batch %d",
+                            state["global_step"],
+                            epoch + 1,
+                            state["batches_in_epoch"],
+                        )
                         stop_training = True
                         break
-                    if (trainer_cfg.save_every_steps is not None
-                            and state["global_step"] % trainer_cfg.save_every_steps == 0):
+                    if (
+                        trainer_cfg.save_every_steps is not None
+                        and state["global_step"] % trainer_cfg.save_every_steps == 0
+                    ):
                         save_checkpoint(LATEST_CHECKPOINT)
             if stop_training:
                 break
@@ -240,12 +322,20 @@ def _train(config: TrainConfig, run_dir: Path, resume_from: Path | None) -> None
             # Chỉ đánh giá val để theo dõi; test chạy riêng bằng scripts/evaluate.py trên checkpoint đã chọn.
             # fork_rng: eval không làm lệch RNG của train, nên resume cho kết quả giống chạy liên tục.
             with torch.random.fork_rng(devices=cuda_devices):
-                metrics, _ = evaluate(model, accelerator, val_dataset, news,
-                                      data_cfg.eval_batch_size, data_cfg.num_workers)
+                metrics, _ = evaluate(
+                    model,
+                    accelerator,
+                    val_dataset,
+                    news,
+                    data_cfg.eval_batch_size,
+                    data_cfg.num_workers,
+                )
             lr = _current_lr(optimizer)
             value = metrics[monitor]
-            is_best = (state["best_value"] is None
-                       or value > state["best_value"] + config.early_stopping.min_delta)
+            is_best = (
+                state["best_value"] is None
+                or value > state["best_value"] + config.early_stopping.min_delta
+            )
             if is_best:
                 state.update(best_value=value, best_epoch=epoch + 1, bad_epochs=0)
             else:
@@ -255,26 +345,50 @@ def _train(config: TrainConfig, run_dir: Path, resume_from: Path | None) -> None
             epoch_time = time.perf_counter() - epoch_start
             train_loss = state["loss_sum"] / state["loss_count"]
             state["history"].append(
-                {"epoch": epoch + 1, "train_loss": train_loss, "lr": lr, "time": epoch_time, **metrics})
-            state.update(epoch=epoch + 1, batches_in_epoch=0, loss_sum=0.0, loss_count=0)
+                {
+                    "epoch": epoch + 1,
+                    "train_loss": train_loss,
+                    "lr": lr,
+                    "time": epoch_time,
+                    **metrics,
+                }
+            )
+            state.update(
+                epoch=epoch + 1, batches_in_epoch=0, loss_sum=0.0, loss_count=0
+            )
             if is_best:
-                save_checkpoint(BEST_CHECKPOINT, metrics={"epoch": epoch + 1, **metrics})
+                save_checkpoint(
+                    BEST_CHECKPOINT, metrics={"epoch": epoch + 1, **metrics}
+                )
             save_checkpoint(LATEST_CHECKPOINT)
             if accelerator.is_main_process:
                 save_json(state["history"], run_dir / HISTORY_FILE)
                 plot_history(state["history"], state["best_epoch"], run_dir / PLOTS_DIR)
 
             logger.info(
-                "epoch=%d loss=%.4f %s lr=%.2e time=%.1fs%s", epoch + 1, train_loss,
-                " ".join(f"{_LOG_ABBREVIATIONS.get(name, name)}={metrics[name]:.4f}"
-                         for name in METRIC_NAMES),
-                lr, epoch_time, " best" if is_best else "")
+                "epoch=%d loss=%.4f %s lr=%.2e time=%.1fs%s",
+                epoch + 1,
+                train_loss,
+                " ".join(
+                    f"{_LOG_ABBREVIATIONS.get(name, name)}={metrics[name]:.4f}"
+                    for name in METRIC_NAMES
+                ),
+                lr,
+                epoch_time,
+                " best" if is_best else "",
+            )
             if state["bad_epochs"] >= config.early_stopping.patience:
-                logger.info("Early stopping: %s has not improved by more than %g for %d epochs",
-                            monitor, config.early_stopping.min_delta, state["bad_epochs"])
+                logger.info(
+                    "Early stopping: %s has not improved by more than %g for %d epochs",
+                    monitor,
+                    config.early_stopping.min_delta,
+                    state["bad_epochs"],
+                )
                 break
 
     if state["best_epoch"] is not None:
-        logger.info("Best epoch %d: %s=%.4f", state["best_epoch"], monitor, state["best_value"])
+        logger.info(
+            "Best epoch %d: %s=%.4f", state["best_epoch"], monitor, state["best_value"]
+        )
     logger.info("Total time: %.1fs", time.perf_counter() - start_time)
     accelerator.end_training()

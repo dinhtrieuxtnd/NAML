@@ -12,9 +12,15 @@ from src.utils.run import setup_logging
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Evaluate a saved checkpoint on the test split")
-    parser.add_argument("--checkpoint", type=Path, required=True,
-                        help="Checkpoint directory, usually outputs/<run>/checkpoints/best")
+    parser = argparse.ArgumentParser(
+        description="Evaluate a saved checkpoint on the test split"
+    )
+    parser.add_argument(
+        "--checkpoint",
+        type=Path,
+        required=True,
+        help="Checkpoint directory, usually outputs/<run>/checkpoints/best",
+    )
     args = parser.parse_args()
 
     setup_logging(None)

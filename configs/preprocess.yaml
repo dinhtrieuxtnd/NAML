@@ -1,5 +1,5 @@
 run:
-  name: real_data_fasttext_v1
+  name: real_data_fasttext_v2
   output_root: data/processed
   overwrite: false
 

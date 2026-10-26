@@ -14,7 +14,9 @@ class AdditiveAttention(nn.Module):
         self.projection = nn.Linear(in_dim, query_dim)
         self.query = nn.Linear(query_dim, 1, bias=False)
 
-    def forward(self, x: torch.Tensor, mask: torch.Tensor | None = None) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, mask: torch.Tensor | None = None
+    ) -> torch.Tensor:
         """x: [B, S, D], mask: [B, S] (True = keep) -> [B, D]."""
         # scores: [B, S, D] -> [B, S, 1] -> [B, S]
         scores = rearrange(self.query(torch.tanh(self.projection(x))), "b s 1 -> b s")
@@ -29,7 +31,9 @@ class AdditiveAttention(nn.Module):
 class CategoryEncoder(nn.Module):
     """Category view: embedding -> dropout -> dense + ReLU."""
 
-    def __init__(self, num_categories: int, category_dim: int, out_dim: int, dropout: float) -> None:
+    def __init__(
+        self, num_categories: int, category_dim: int, out_dim: int, dropout: float
+    ) -> None:
         super().__init__()
         self.embedding = nn.Embedding(num_categories, category_dim)
         self.dropout = nn.Dropout(dropout)
@@ -45,10 +49,17 @@ class TextCNNEncoder(nn.Module):
     """One text view as in the NAML paper: CNN + ReLU -> dropout -> word attention."""
 
     def __init__(
-        self, embedding_dim: int, num_filters: int, window_size: int, query_dim: int, dropout: float
+        self,
+        embedding_dim: int,
+        num_filters: int,
+        window_size: int,
+        query_dim: int,
+        dropout: float,
     ) -> None:
         super().__init__()
-        self.cnn = nn.Conv1d(embedding_dim, num_filters, window_size, padding=window_size // 2)
+        self.cnn = nn.Conv1d(
+            embedding_dim, num_filters, window_size, padding=window_size // 2
+        )
         self.dropout = nn.Dropout(dropout)
         self.attention = AdditiveAttention(num_filters, query_dim)
 
@@ -83,17 +94,29 @@ class NewsEncoder(nn.Module):
         """word_embedding: [V, E]."""
         super().__init__()
         self.word_embedding = nn.Embedding.from_pretrained(
-            word_embedding, freeze=freeze_embedding, padding_idx=PAD_TOKEN_IDX)
+            word_embedding, freeze=freeze_embedding, padding_idx=PAD_TOKEN_IDX
+        )
         self.dropout = nn.Dropout(dropout)
-        self.text_encoders = nn.ModuleDict({
-            view: TextCNNEncoder(
-                word_embedding.shape[1], num_filters, window_size, query_dim, dropout)
-            for view in text_views
-        })
-        self.category_encoder = CategoryEncoder(num_categories, category_dim, num_filters, dropout)
+        self.text_encoders = nn.ModuleDict(
+            {
+                view: TextCNNEncoder(
+                    word_embedding.shape[1],
+                    num_filters,
+                    window_size,
+                    query_dim,
+                    dropout,
+                )
+                for view in text_views
+            }
+        )
+        self.category_encoder = CategoryEncoder(
+            num_categories, category_dim, num_filters, dropout
+        )
         self.view_attention = AdditiveAttention(num_filters, query_dim)
 
-    def forward(self, tokens: dict[str, torch.Tensor], category: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, tokens: dict[str, torch.Tensor], category: torch.Tensor
+    ) -> torch.Tensor:
         """tokens: {view: [U, L_view]}, category: [U] -> [U, F]."""
         view_vectors = []
         for view, text_encoder in self.text_encoders.items():
@@ -118,11 +141,15 @@ class NAML(nn.Module):
         self.news_encoder = news_encoder
         self.user_attention = AdditiveAttention(news_dim, query_dim)
 
-    def encode_news(self, tokens: dict[str, torch.Tensor], category: torch.Tensor) -> torch.Tensor:
+    def encode_news(
+        self, tokens: dict[str, torch.Tensor], category: torch.Tensor
+    ) -> torch.Tensor:
         """tokens: {view: [U, L_view]}, category: [U] -> [U, D]."""
         return self.news_encoder(tokens, category)
 
-    def encode_user(self, history: torch.Tensor, history_mask: torch.Tensor) -> torch.Tensor:
+    def encode_user(
+        self, history: torch.Tensor, history_mask: torch.Tensor
+    ) -> torch.Tensor:
         """history: [B, N, D], history_mask: [B, N] -> [B, D]."""
         return self.user_attention(history, history_mask)
 
@@ -151,4 +178,3 @@ class NAML(nn.Module):
         user = self.encode_user(news_table[history], history_mask)
         # candidates: [B, C] -> [B, C, D]
         return self.score(user, news_table[candidates])
-

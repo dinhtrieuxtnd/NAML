@@ -28,7 +28,9 @@ def _dedup_history(history: list[int]) -> list[int]:
     return latest_first[::-1]
 
 
-def build_train_samples(behaviors_df: pd.DataFrame) -> tuple[list[dict], dict[str, int]]:
+def build_train_samples(
+    behaviors_df: pd.DataFrame,
+) -> tuple[list[dict], dict[str, int]]:
     train_samples = []
     train_counter = {
         "input_impressions": len(behaviors_df),
@@ -41,10 +43,16 @@ def build_train_samples(behaviors_df: pd.DataFrame) -> tuple[list[dict], dict[st
             train_counter["empty_history"] += 1
             continue
         history = _dedup_history(behavior[HISTORY_COLUMN])
-        train_counter["duplicate_history_clicks"] += len(behavior[HISTORY_COLUMN]) - len(history)
+        train_counter["duplicate_history_clicks"] += len(
+            behavior[HISTORY_COLUMN]
+        ) - len(history)
         candidates, labels = behavior[CANDIDATES_COLUMN], behavior[LABELS_COLUMN]
-        positive_impressions = [news for news, label in zip(candidates, labels) if label == 1]
-        negative_impressions = [news for news, label in zip(candidates, labels) if label == 0]
+        positive_impressions = [
+            news for news, label in zip(candidates, labels) if label == 1
+        ]
+        negative_impressions = [
+            news for news, label in zip(candidates, labels) if label == 0
+        ]
 
         for pos_item in positive_impressions:
             train_samples.append(
@@ -73,7 +81,9 @@ def build_eval_samples(behaviors_df: pd.DataFrame) -> tuple[list[dict], dict[str
             eval_counter["empty_history"] += 1
             continue
         history = _dedup_history(behavior[HISTORY_COLUMN])
-        eval_counter["duplicate_history_clicks"] += len(behavior[HISTORY_COLUMN]) - len(history)
+        eval_counter["duplicate_history_clicks"] += len(behavior[HISTORY_COLUMN]) - len(
+            history
+        )
         eval_samples.append(
             {
                 IMPRESSION_ID_COLUMN: behavior[IMPRESSION_ID_COLUMN],
@@ -104,7 +114,9 @@ def build_token_matrix(
         # pad_row: [1, L]
         pad_row = np.full((1, length), PAD_TOKEN_IDX, dtype=np.int32)
         # encoded: N x [L] -> [N, L]
-        encoded = np.stack([encode(tokens, vocab, length) for tokens in tokenized[column]])
+        encoded = np.stack(
+            [encode(tokens, vocab, length) for tokens in tokenized[column]]
+        )
         # pad_row: [1, L], encoded: [N, L] -> [N + 1, L]
         matrixes[column] = np.concatenate([pad_row, encoded], axis=0)
 
@@ -120,7 +132,10 @@ def build_token_matrix(
         }
     first_idx = NEWS_PAD_IDX + 1
     index_matrix = dict(
-        zip(news_df[NEWS_ID_COLUMN], np.arange(first_idx, len(news_df) + first_idx, dtype=np.int32))
+        zip(
+            news_df[NEWS_ID_COLUMN],
+            np.arange(first_idx, len(news_df) + first_idx, dtype=np.int32),
+        )
     )
     return matrixes, index_matrix, statistics_token_length
 
@@ -133,4 +148,6 @@ def build_category_dict(news_df: pd.DataFrame) -> dict[str, int]:
 def build_newsId_cateId_mapping(
     news_df: pd.DataFrame, category_dict: dict[str, int]
 ) -> dict[int, int]:
-    return dict(zip(news_df[NEWS_ID_COLUMN], news_df[NEWS_CATEGORY_COLUMN].map(category_dict)))
+    return dict(
+        zip(news_df[NEWS_ID_COLUMN], news_df[NEWS_CATEGORY_COLUMN].map(category_dict))
+    )

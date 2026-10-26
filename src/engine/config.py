@@ -1,6 +1,14 @@
 from typing import Literal
 
-from pydantic import NonNegativeFloat, NonNegativeInt, PositiveFloat, PositiveInt, confloat
+from pydantic import (
+    DirectoryPath,
+    FilePath,
+    NonNegativeFloat,
+    NonNegativeInt,
+    PositiveFloat,
+    PositiveInt,
+    confloat,
+)
 
 from src.data.config import DataConfig
 from src.data.constants import METRIC_NAMES
@@ -43,6 +51,22 @@ class EarlyStoppingConfig(StrictModel):
     # Dừng sau `patience` epoch liên tiếp monitor không vượt best + min_delta.
     patience: PositiveInt
     min_delta: NonNegativeFloat
+
+
+class BaselineDataConfig(StrictModel):
+    processed_dir: DirectoryPath
+    # Behaviors thô đã dùng để tạo processed_dir; chỉ đọc thời gian impression và click.
+    train_behaviors: FilePath
+    val_behaviors: FilePath
+    test_behaviors: FilePath
+
+
+class BaselineConfig(StrictModel):
+    run: RunConfig
+    data: BaselineDataConfig
+    seed: NonNegativeInt
+    # popularity: số click vào tin trong N phút ngay trước thời điểm impression.
+    popularity_window_minutes: PositiveInt
 
 
 class TrainConfig(StrictModel):

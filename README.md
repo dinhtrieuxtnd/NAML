@@ -13,10 +13,10 @@ Mỗi bài báo có 4 view: `title`, `sapo`, `tags` (văn bản) và `category`.
 
 ```
 configs/            # mọi hyperparameter (YAML, validate bằng Pydantic)
-scripts/            # entry-point: preprocess.py, train.py, evaluate.py
+scripts/            # entry-point: preprocess.py, train.py, evaluate.py, baselines.py
 src/data/           # đọc CSV, tách token, embedding, tiền xử lý, Dataset, collator, hằng số
 src/models/         # nn.Module thuần + registry.py (registry duy nhất)
-src/engine/         # vòng train (accelerate), evaluate (torchmetrics), vẽ biểu đồ
+src/engine/         # vòng train (accelerate), evaluate + metric (torchmetrics), baseline, vẽ biểu đồ
 src/utils/          # tiện ích dùng chung: config loader, I/O, quy chuẩn run (run.py)
 ```
 
@@ -49,40 +49,23 @@ Xem dòng `CUDA Version` ở góc trên bên phải. Dòng này cho biết phiê
 
 **RTX 50xx** (ví dụ 5060 Ti, kiến trúc Blackwell `sm_120`) bắt buộc dùng `cu129` hoặc mới hơn. Nếu máy thuê có 5060 Ti mà `nvidia-smi` chỉ hiện CUDA ≤ 12.8 thì driver quá cũ, nên đổi sang máy khác.
 
-**2. Tạo môi trường Python 3.12**
+**2. Tạo môi trường Python**
 
-Image của máy thuê thường có sẵn Python 3.10. Python 3.10 **không** cài được `requirement.txt`, nên cần tạo môi trường riêng.
+Nên dùng python 3.12 với RTX 30xx/40xx. Link: https://www.python.org/ftp/python/3.12.16/Python-3.12.16.tar.xz
+Dùng python 3.14 với RTX 50xx. Link: https://www.python.org/ftp/python/3.14.9/Python-3.14.9.tar.xz
+Python 3.15 mới nhật hiện chưa tương thích với 1 vài phiên bản thư viện trong `requirement.txt`.
 
-```bash
-# conda (miniconda thường có sẵn trên image PyTorch)
-conda create -y -n naml python=3.12
-conda activate naml
-```
+**3. Cài các thư viện**
 
-Hoặc dùng `uv`, nếu máy không có conda:
+Cài các thư viện trong `requirement.txt` (đã pin phiên bản) và cài torch riêng
 
 ```bash
-pip install uv
-uv venv --python 3.12 .venv
-source .venv/bin/activate
-```
-
-Nếu dùng `uv`, thay mọi lệnh `pip install` ở các bước sau bằng `uv pip install`.
-
-**3. Cài torch đúng bản CUDA, sau đó mới cài phần còn lại**
-
-Luôn cài torch trước. Nếu để `pip install -r requirement.txt` tự cài torch, bạn có thể nhận bản CUDA không khớp với GPU.
-
-```bash
-# Chọn MỘT dòng theo bảng ở bước 1 (torch 2.13.0 không có bản cu128)
-pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cu130
-pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cu129
-pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cu126
-
 pip install -r requirement.txt
 ```
 
-Sau khi chạy `pip install -r requirement.txt`, kiểm tra torch không bị cài đè. `pip show torch` phải vẫn hiện bản `2.13.0+cuXXX` vừa cài.
+```bash
+pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+```
 
 **4. Kiểm tra torch thấy GPU**
 
@@ -124,17 +107,6 @@ Smoke test chạy dưới 1 phút. Nếu nó in 3 dòng `epoch=...` và `train c
 | `CUDA out of memory` | Batch quá lớn so với VRAM | Giảm `data.train_batch_size`, tăng `trainer.gradient_accumulation_steps` để giữ batch hiệu dụng; hoặc giảm `data.history_len` |
 | `Cannot resume ...: config differs in ...` | Đổi trường cố định khi resume | Giữ nguyên các trường được liệt kê (xem [Resume](#resume)) |
 
-### Cài trên Windows (máy dev)
-
-```bash
-py -3.12 -m venv .venv
-.venv\Scripts\activate
-pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cu126
-pip install -r requirement.txt
-```
-
-Trên Windows, nên để `data.num_workers: 0` nếu gặp lỗi hoặc thấy DataLoader khởi động chậm.
-
 ## Dữ liệu đầu vào
 
 Đặt trong `data/raw/` (thư mục `data/` không được đưa lên git):
@@ -160,6 +132,7 @@ Mỗi lần chạy một script là một run, và config nào cũng có section
 | Tiền xử lý | `output_root/name`, tên cố định vì config train trỏ tới nó | `config.yaml`, `run_info.json`, `preprocess.log` |
 | Train | `output_root/<name>_<timestamp>`; resume ghi tiếp vào thư mục cũ | `config.yaml`, `run_info.json`, `train.log` |
 | Evaluate | `<thư mục run train>/evaluation_<checkpoint>/` | chỉ `metrics.json` và `predictions.csv`; log chỉ in ra màn hình |
+| Baseline | `output_root/<name>_<timestamp>` | `config.yaml`, `run_info.json`, `baselines.log`, `metrics.json` |
 
 - `config.yaml` là config đã resolve và không bao giờ bị ghi đè.
 - `run_info.json` là danh sách, mỗi lần chạy hoặc resume thêm một mục, gồm:
@@ -269,6 +242,19 @@ Config được đọc từ `config.yaml` của checkpoint. Kết quả ghi vào
 | `ndcg@5`, `ndcg@10` | nDCG tại top 5 / 10 |
 
 Các impression có lịch sử rỗng bị loại khỏi train và evaluate.
+
+## 4. Baseline
+
+Để biết model học được bao nhiêu, so sánh với hai cách xếp hạng không học, chấm trên đúng các impression val/test mà model được đánh giá:
+
+```bash
+python -m scripts.baselines --config configs/baselines.yaml
+```
+
+- `random`: điểm ngẫu nhiên cho mỗi candidate (seed cố định).
+- `popularity`: số click vào candidate trong `popularity_window_minutes` phút ngay trước thời điểm impression. Click được đếm từ log impression thô của cả ba split, nhưng chỉ lấy click xảy ra trước impression, nên không rò rỉ tương lai. Hoà điểm được phá ngẫu nhiên.
+
+Baseline cần thời gian impression, mà dữ liệu processed không lưu, nên config trỏ thêm tới các file behaviors thô đã dùng để tạo `processed_dir`. Kết quả ghi vào `outputs/<run.name>_<timestamp>/metrics.json` theo dạng `{split: {baseline: {metric: value}}}`. Baseline không train gì nên được chấm cả val và test. `popularity_window_minutes` chỉ nên chọn theo val.
 
 ## Config chính
 

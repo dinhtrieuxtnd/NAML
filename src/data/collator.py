@@ -57,8 +57,10 @@ class EvalCollator:
         history = torch.stack([item[HISTORY_COLUMN] for item in items])
         # candidates, labels: [B, C_max]
         candidates = pad_sequence(
-            [item[CANDIDATES_COLUMN] for item in items], batch_first=True,
-            padding_value=NEWS_PAD_IDX)
+            [item[CANDIDATES_COLUMN] for item in items],
+            batch_first=True,
+            padding_value=NEWS_PAD_IDX,
+        )
         labels = pad_sequence([item[LABELS_COLUMN] for item in items], batch_first=True)
         return {
             HISTORY_COLUMN: history,
@@ -66,7 +68,9 @@ class EvalCollator:
             CANDIDATES_COLUMN: candidates,
             CANDIDATE_MASK_KEY: candidates != NEWS_PAD_IDX,
             LABELS_COLUMN: labels,
-            INDEXES_KEY: torch.tensor([item[INDEXES_KEY] for item in items], dtype=torch.long),
+            INDEXES_KEY: torch.tensor(
+                [item[INDEXES_KEY] for item in items], dtype=torch.long
+            ),
         }
 
 
