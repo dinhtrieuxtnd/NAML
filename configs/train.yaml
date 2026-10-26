@@ -7,15 +7,15 @@ data:
   text_views: [title, sapo, tags]
   history_len: 50
   num_negatives: 4
-  train_batch_size: 256
-  eval_batch_size: 128
+  train_batch_size: 512
+  eval_batch_size: 1024
   num_workers: 4
   max_train_samples: null
   max_eval_impressions: null
 
 model:
   name: naml
-  freeze_embedding: false
+  freeze_embedding: true
   num_filters: 400
   window_size: 3
   category_dim: 100
@@ -27,7 +27,7 @@ loss:
 
 optimizer:
   lr: 2.0e-4
-  weight_decay: 0.0
+  weight_decay: 1e-4
 
 scheduler:
   factor: 0.5
