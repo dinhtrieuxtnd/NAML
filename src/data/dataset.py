@@ -8,11 +8,15 @@ from src.data.constants import (
     ARTIFACTS_DIR,
     CANDIDATES_COLUMN,
     HISTORY_COLUMN,
+    HOUR_KEY,
     INDEXES_KEY,
     LABELS_COLUMN,
     NEGATIVE_POOL_KEY,
+    NEGATIVE_POOL_POPULARITY_KEY,
     NEWS_PAD_IDX,
+    POPULARITY_KEY,
     POSITIVE_ITEM_KEY,
+    POSITIVE_POPULARITY_KEY,
     SAMPLES_FILE_TEMPLATE,
 )
 from src.data.news import NewsFeatures
@@ -36,7 +40,8 @@ def _history_rows(
 
 
 class TrainDataset(Dataset):
-    """Each item: history [N] and candidates [K + 1] as news rows, the positive at position 0.
+    """Each item: history [N] and candidates [K + 1] as news rows, the positive at position 0,
+    popularity [K + 1] aligned with candidates and hour [].
 
     Negatives are drawn from an RNG seeded by (seed, epoch, idx), so they do not depend on
     worker count or prefetching, and a resumed run draws the same negatives.
@@ -67,22 +72,32 @@ class TrainDataset(Dataset):
         sample = self.samples[idx]
         pool = sample[NEGATIVE_POOL_KEY]
         rng = random.Random(f"{self.seed}:{self.epoch}:{idx}")
+        # Bốc theo chỉ số (cùng chuỗi lựa chọn như bốc thẳng từ pool) để lấy kèm popularity.
         # Impression có ít hơn K tin âm thì lấy lặp lại.
         if len(pool) >= self.num_negatives:
-            negatives = rng.sample(pool, self.num_negatives)
+            picks = rng.sample(range(len(pool)), self.num_negatives)
         else:
-            negatives = rng.choices(pool, k=self.num_negatives)
-        candidates = self.news.to_rows([sample[POSITIVE_ITEM_KEY], *negatives])
+            picks = rng.choices(range(len(pool)), k=self.num_negatives)
+        candidates = self.news.to_rows(
+            [sample[POSITIVE_ITEM_KEY], *(pool[i] for i in picks)]
+        )
+        pool_popularity = sample[NEGATIVE_POOL_POPULARITY_KEY]
+        popularity = [
+            sample[POSITIVE_POPULARITY_KEY],
+            *(pool_popularity[i] for i in picks),
+        ]
         return {
             HISTORY_COLUMN: _history_rows(
                 self.news, sample[HISTORY_COLUMN], self.history_len
             ),
             CANDIDATES_COLUMN: torch.tensor(candidates, dtype=torch.long),
+            POPULARITY_KEY: torch.tensor(popularity, dtype=torch.float),
+            HOUR_KEY: torch.tensor(sample[HOUR_KEY], dtype=torch.float),
         }
 
 
 class EvalDataset(Dataset):
-    """Each item: one impression with history [N], candidates [C] and labels [C]."""
+    """Each item: one impression with history [N], candidates / labels / popularity [C], hour []."""
 
     def __init__(
         self, samples: list[dict], news: NewsFeatures, history_len: int
@@ -104,6 +119,8 @@ class EvalDataset(Dataset):
                 self.news.to_rows(sample[CANDIDATES_COLUMN]), dtype=torch.long
             ),
             LABELS_COLUMN: torch.tensor(sample[LABELS_COLUMN], dtype=torch.long),
+            POPULARITY_KEY: torch.tensor(sample[POPULARITY_KEY], dtype=torch.float),
+            HOUR_KEY: torch.tensor(sample[HOUR_KEY], dtype=torch.float),
             INDEXES_KEY: idx,
         }
 

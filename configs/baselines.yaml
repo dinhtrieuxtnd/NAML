@@ -3,11 +3,12 @@ run:
   output_root: outputs
 
 data:
-  processed_dir: data/processed/real_data_fasttext_v2
+  processed_dir: data/processed/real_data_fasttext_v3
   # Phải là các file đã dùng để tạo processed_dir (xem configs/preprocess.yaml).
-  train_behaviors: data/raw/behaviors/train_behaviors.csv
   val_behaviors: data/raw/behaviors/val_behaviors.csv
   test_behaviors: data/raw/behaviors/test_behaviors.csv
+  # Click thật theo clientTime (chỉ đọc, không sửa create_data/).
+  click_log: create_data/raw_log_cleaned
 
 seed: 42
 # Chọn theo val ndcg@10 (5–60 phút; 15 phút tốt nhất, cửa sổ tính bằng giờ kém hơn hẳn).

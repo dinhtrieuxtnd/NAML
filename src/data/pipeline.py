@@ -19,7 +19,8 @@ from src.data.constants import (
     VOCAB_FILE,
 )
 from src.data.embedding import build_embedding_matrix
-from src.data.parser import read_behaviors, read_news
+from src.data.parser import read_behaviors, read_clicks, read_news
+from src.data.popularity import ClickCounter
 from src.data.preprocessing import (
     build_category_dict,
     build_eval_samples,
@@ -102,15 +103,27 @@ def _preprocess(config: PreprocessConfig, output_dir: Path) -> None:
     if num_empty_category > 0:
         logger.warning("News with empty category: %d", num_empty_category)
 
+    clicks = ClickCounter(read_clicks(config.input.click_log))
+    window_seconds = config.popularity.window_minutes * 60
+    logger.info(
+        "Clicks: %d, popularity window=%dmin",
+        clicks.num_clicks,
+        config.popularity.window_minutes,
+    )
+
     samples, counters = {}, {}
     for split, behaviors_df in behaviors.items():
         build = build_train_samples if split == "train" else build_eval_samples
-        samples[split], counters[split] = build(behaviors_df)
+        samples[split], counters[split] = build(behaviors_df, clicks, window_seconds)
         logger.info(
-            "%s samples: %d, duplicate history clicks dropped: %d",
+            "%s samples: %d, duplicate history clicks dropped: %d, "
+            "candidates with no click in window: %.1f%%",
             split,
             counters[split]["output_samples"],
             counters[split]["duplicate_history_clicks"],
+            100
+            * counters[split]["zero_click_candidates"]
+            / counters[split]["candidates"],
         )
         if counters[split]["empty_history"] > 0:
             logger.warning(
@@ -181,6 +194,7 @@ def _preprocess(config: PreprocessConfig, output_dir: Path) -> None:
         },
         "samples": counters,
         "text_config": config.text.model_dump(),
+        "popularity_config": config.popularity.model_dump(),
         "vocab_size": len(vocab),
         "embedding": statistics_embedding,
         "token_length": statistics_token_length,

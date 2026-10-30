@@ -3,7 +3,7 @@ run:
   output_root: outputs
 
 data:
-  processed_dir: data/processed/real_data_fasttext_v1
+  processed_dir: data/processed/real_data_fasttext_v3
   text_views: [title, sapo, tags]
   history_len: 50
   num_negatives: 4
@@ -14,13 +14,15 @@ data:
   max_eval_impressions: null
 
 model:
-  name: naml
+  name: naml_popularity
   freeze_embedding: true
   num_filters: 400
   window_size: 3
   category_dim: 100
   query_dim: 200
   dropout: 0.2
+  popularity_user_dim: 16
+  popularity_hidden_dim: 32
 
 loss:
   name: cross_entropy

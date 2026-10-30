@@ -1,5 +1,5 @@
 run:
-  name: real_data_fasttext_v2
+  name: real_data_fasttext_v3
   output_root: data/processed
   overwrite: false
 
@@ -9,6 +9,8 @@ input:
   test_behaviors: data/raw/behaviors/test_behaviors.csv
   news: data/raw/news/news.csv
   word_vectors: data/raw/fasttext/cc.vi.300.vec
+  # Click thật theo clientTime (chỉ đọc, không sửa create_data/).
+  click_log: create_data/raw_log_cleaned
 
 embedding:
   dim: 300
@@ -21,3 +23,7 @@ text:
     title: 32
     sapo: 72
     tags: 32
+
+# Cùng cửa sổ với popularity_window_minutes của configs/baselines.yaml (15 phút tốt nhất trên val).
+popularity:
+  window_minutes: 15

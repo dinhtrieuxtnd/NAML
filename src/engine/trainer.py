@@ -15,9 +15,11 @@ from src.data.constants import (
     CANDIDATES_COLUMN,
     HISTORY_COLUMN,
     HISTORY_MASK_KEY,
+    HOUR_KEY,
     METRIC_NAMES,
     NEWS_CATEGORY_KEY,
     NEWS_TOKENS_KEY,
+    POPULARITY_KEY,
     STATISTICS_FILE,
 )
 from src.data.dataset import EvalDataset, TrainDataset, load_split_samples
@@ -271,6 +273,8 @@ def _train(config: TrainConfig, run_dir: Path, resume_from: Path | None) -> None
                         history=batch[HISTORY_COLUMN],
                         history_mask=batch[HISTORY_MASK_KEY],
                         candidates=batch[CANDIDATES_COLUMN],
+                        popularity=batch[POPULARITY_KEY],
+                        hour=batch[HOUR_KEY],
                     )
                     target = torch.zeros(
                         scores.shape[0], dtype=torch.long, device=scores.device

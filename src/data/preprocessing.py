@@ -4,16 +4,22 @@ import pandas as pd
 from src.data.constants import (
     CANDIDATES_COLUMN,
     HISTORY_COLUMN,
+    HOUR_KEY,
     IMPRESSION_ID_COLUMN,
     LABELS_COLUMN,
     NEGATIVE_POOL_KEY,
+    NEGATIVE_POOL_POPULARITY_KEY,
     NEWS_CATEGORY_COLUMN,
     NEWS_ID_COLUMN,
     NEWS_PAD_IDX,
     PAD_TOKEN_IDX,
+    POPULARITY_KEY,
     POSITIVE_ITEM_KEY,
+    POSITIVE_POPULARITY_KEY,
+    TIME_COLUMN,
     USER_ID_COLUMN,
 )
+from src.data.popularity import ClickCounter, hour_of_day, relative_popularity
 from src.data.text import encode
 
 
@@ -28,16 +34,33 @@ def _dedup_history(history: list[int]) -> list[int]:
     return latest_first[::-1]
 
 
-def build_train_samples(
-    behaviors_df: pd.DataFrame,
-) -> tuple[list[dict], dict[str, int]]:
-    train_samples = []
-    train_counter = {
+def _candidate_popularity(
+    behavior: pd.Series, clicks: ClickCounter, window_seconds: int
+) -> tuple[list[float], int]:
+    """Relative popularity of every candidate of the impression (mean over all of them, before
+    negative sampling), and how many candidates had no click in the window."""
+    candidates = np.asarray(behavior[CANDIDATES_COLUMN], dtype=np.int64)
+    times = np.full(len(candidates), behavior[TIME_COLUMN].to_datetime64())
+    counts = clicks.count(candidates, times, window_seconds)
+    return relative_popularity(counts).tolist(), int((counts == 0).sum())
+
+
+def _new_counter(behaviors_df: pd.DataFrame) -> dict[str, int]:
+    return {
         "input_impressions": len(behaviors_df),
         "output_samples": 0,
         "empty_history": 0,
         "duplicate_history_clicks": 0,
+        "candidates": 0,
+        "zero_click_candidates": 0,
     }
+
+
+def build_train_samples(
+    behaviors_df: pd.DataFrame, clicks: ClickCounter, window_seconds: int
+) -> tuple[list[dict], dict[str, int]]:
+    train_samples = []
+    train_counter = _new_counter(behaviors_df)
     for _, behavior in behaviors_df.iterrows():
         if behavior[HISTORY_COLUMN] == []:
             train_counter["empty_history"] += 1
@@ -47,35 +70,41 @@ def build_train_samples(
             behavior[HISTORY_COLUMN]
         ) - len(history)
         candidates, labels = behavior[CANDIDATES_COLUMN], behavior[LABELS_COLUMN]
-        positive_impressions = [
-            news for news, label in zip(candidates, labels) if label == 1
+        popularity, num_zero = _candidate_popularity(behavior, clicks, window_seconds)
+        train_counter["candidates"] += len(candidates)
+        train_counter["zero_click_candidates"] += num_zero
+        positives = [
+            (news, pop) for news, label, pop in zip(candidates, labels, popularity) if label == 1
         ]
-        negative_impressions = [
-            news for news, label in zip(candidates, labels) if label == 0
+        negatives = [
+            (news, pop) for news, label, pop in zip(candidates, labels, popularity) if label == 0
         ]
+        negative_pool = [news for news, _ in negatives]
+        negative_pool_popularity = [pop for _, pop in negatives]
+        hour = hour_of_day(behavior[TIME_COLUMN])
 
-        for pos_item in positive_impressions:
+        for pos_item, pos_popularity in positives:
             train_samples.append(
                 {
                     IMPRESSION_ID_COLUMN: behavior[IMPRESSION_ID_COLUMN],
                     USER_ID_COLUMN: behavior[USER_ID_COLUMN],
                     HISTORY_COLUMN: history,
-                    NEGATIVE_POOL_KEY: negative_impressions,
+                    NEGATIVE_POOL_KEY: negative_pool,
+                    NEGATIVE_POOL_POPULARITY_KEY: negative_pool_popularity,
                     POSITIVE_ITEM_KEY: pos_item,
+                    POSITIVE_POPULARITY_KEY: pos_popularity,
+                    HOUR_KEY: hour,
                 }
             )
             train_counter["output_samples"] += 1
     return train_samples, train_counter
 
 
-def build_eval_samples(behaviors_df: pd.DataFrame) -> tuple[list[dict], dict[str, int]]:
+def build_eval_samples(
+    behaviors_df: pd.DataFrame, clicks: ClickCounter, window_seconds: int
+) -> tuple[list[dict], dict[str, int]]:
     eval_samples = []
-    eval_counter = {
-        "input_impressions": len(behaviors_df),
-        "output_samples": 0,
-        "empty_history": 0,
-        "duplicate_history_clicks": 0,
-    }
+    eval_counter = _new_counter(behaviors_df)
     for _, behavior in behaviors_df.iterrows():
         if behavior[HISTORY_COLUMN] == []:
             eval_counter["empty_history"] += 1
@@ -84,6 +113,9 @@ def build_eval_samples(behaviors_df: pd.DataFrame) -> tuple[list[dict], dict[str
         eval_counter["duplicate_history_clicks"] += len(behavior[HISTORY_COLUMN]) - len(
             history
         )
+        popularity, num_zero = _candidate_popularity(behavior, clicks, window_seconds)
+        eval_counter["candidates"] += len(popularity)
+        eval_counter["zero_click_candidates"] += num_zero
         eval_samples.append(
             {
                 IMPRESSION_ID_COLUMN: behavior[IMPRESSION_ID_COLUMN],
@@ -91,6 +123,8 @@ def build_eval_samples(behaviors_df: pd.DataFrame) -> tuple[list[dict], dict[str
                 HISTORY_COLUMN: history,
                 CANDIDATES_COLUMN: behavior[CANDIDATES_COLUMN],
                 LABELS_COLUMN: behavior[LABELS_COLUMN],
+                POPULARITY_KEY: popularity,
+                HOUR_KEY: hour_of_day(behavior[TIME_COLUMN]),
             }
         )
         eval_counter["output_samples"] += 1

@@ -15,12 +15,14 @@ from src.data.constants import (
     CANDIDATES_COLUMN,
     HISTORY_COLUMN,
     HISTORY_MASK_KEY,
+    HOUR_KEY,
     IMPRESSION_ID_COLUMN,
     INDEXES_KEY,
     LABELS_COLUMN,
     NEWS_CATEGORY_KEY,
     NEWS_ROWS_KEY,
     NEWS_TOKENS_KEY,
+    POPULARITY_KEY,
     PREDICTION_LABEL_COLUMN,
     PREDICTION_NEWS_ID_COLUMN,
     RANK_COLUMN,
@@ -114,7 +116,12 @@ def evaluate(
             news_table[batch[HISTORY_COLUMN]], batch[HISTORY_MASK_KEY]
         )
         # candidates: [B, C_max] -> [B, C_max, D]; scores: [B, C_max]
-        scores = unwrapped.score(user, news_table[batch[CANDIDATES_COLUMN]])
+        scores = unwrapped.score(
+            user,
+            news_table[batch[CANDIDATES_COLUMN]],
+            batch[POPULARITY_KEY],
+            batch[HOUR_KEY],
+        )
         mask = batch[CANDIDATE_MASK_KEY]
         # indexes: [B] -> [B, C_max]
         indexes = repeat(batch[INDEXES_KEY], "b -> b c", c=scores.shape[1])

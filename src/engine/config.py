@@ -12,7 +12,7 @@ from pydantic import (
 
 from src.data.config import DataConfig
 from src.data.constants import METRIC_NAMES
-from src.models.config import NAMLConfig
+from src.models.config import ModelConfig
 from src.utils.config import RunConfig, StrictModel
 
 
@@ -55,10 +55,11 @@ class EarlyStoppingConfig(StrictModel):
 
 class BaselineDataConfig(StrictModel):
     processed_dir: DirectoryPath
-    # Behaviors thô đã dùng để tạo processed_dir; chỉ đọc thời gian impression và click.
-    train_behaviors: FilePath
+    # Behaviors thô đã dùng để tạo processed_dir; chỉ đọc thời gian impression.
     val_behaviors: FilePath
     test_behaviors: FilePath
+    # Log sự kiện đã làm sạch (parquet); popularity đếm click (eventId 2) theo clientTime.
+    click_log: DirectoryPath
 
 
 class BaselineConfig(StrictModel):
@@ -72,7 +73,7 @@ class BaselineConfig(StrictModel):
 class TrainConfig(StrictModel):
     run: RunConfig
     data: DataConfig
-    model: NAMLConfig
+    model: ModelConfig
     loss: LossConfig
     optimizer: OptimizerConfig
     scheduler: SchedulerConfig

@@ -15,6 +15,8 @@ class InputConfig(StrictModel):
     news: FilePath
     # fastText .vec (cc.vi.300.vec); chỉ đọc lúc preprocess.
     word_vectors: FilePath
+    # Log sự kiện đã làm sạch (parquet); popularity đếm click (eventId 2) theo clientTime.
+    click_log: DirectoryPath
 
 
 class EmbeddingConfig(StrictModel):
@@ -34,11 +36,17 @@ class TextConfig(StrictModel):
     max_length: TextMaxLengthConfig
 
 
+class PopularityConfig(StrictModel):
+    # Popularity của candidate: số click vào tin trong N phút ngay trước thời điểm impression.
+    window_minutes: PositiveInt
+
+
 class PreprocessConfig(StrictModel):
     run: PreprocessRunConfig
     input: InputConfig
     embedding: EmbeddingConfig
     text: TextConfig
+    popularity: PopularityConfig
 
 
 class DataConfig(StrictModel):

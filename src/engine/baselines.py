@@ -2,14 +2,13 @@
 
 - random: a uniformly random score per candidate.
 - popularity: clicks on the candidate during the popularity_window_minutes before the
-  impression, counted over the impression logs of every split (only earlier clicks are used).
+  impression, counted from the cleaned event log at the real click time (only earlier clicks).
 """
 
 import logging
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import torch
 
 from src.data.constants import (
@@ -19,7 +18,8 @@ from src.data.constants import (
     TIME_COLUMN,
 )
 from src.data.dataset import load_split_samples
-from src.data.parser import read_impression_log
+from src.data.parser import read_clicks, read_impression_log
+from src.data.popularity import ClickCounter
 from src.engine.config import BaselineConfig
 from src.engine.metrics import RankingMetrics
 from src.utils.io import save_json
@@ -29,38 +29,6 @@ logger = logging.getLogger(__name__)
 
 STAGE = "baselines"
 EVAL_SPLITS = ("val", "test")
-# Khoảng cách giữa hai tin trong khoá (tin, giây) của ClickCounter; lớn hơn mọi timestamp giây.
-_SECONDS_SPAN = 2**40
-
-
-def _to_seconds(times: np.ndarray) -> np.ndarray:
-    return times.astype("datetime64[s]").astype(np.int64)
-
-
-class ClickCounter:
-    """Counts the clicks on each news inside a time window, from impression logs."""
-
-    def __init__(self, log: pd.DataFrame) -> None:
-        clicks = log.explode([CANDIDATES_COLUMN, LABELS_COLUMN])
-        clicks = clicks[clicks[LABELS_COLUMN] == 1]
-        news_ids = clicks[CANDIDATES_COLUMN].to_numpy(dtype=np.int64)
-        self.news_index = pd.Index(np.unique(news_ids))
-        codes = self.news_index.get_indexer(news_ids)
-        # keys: [num_clicks], sorted by news then click time.
-        self.keys = np.sort(codes * _SECONDS_SPAN + _to_seconds(clicks[TIME_COLUMN].values))
-        self.num_clicks = len(clicks)
-
-    def count(
-        self, news_ids: np.ndarray, times: np.ndarray, window_seconds: int
-    ) -> np.ndarray:
-        """news_ids, times: [Q] -> clicks on news_ids[i] in [times[i] - window, times[i])."""
-        codes = self.news_index.get_indexer(news_ids)
-        end = codes * _SECONDS_SPAN + _to_seconds(times)
-        counts = np.searchsorted(self.keys, end) - np.searchsorted(
-            self.keys, end - window_seconds
-        )
-        # Tin chưa từng được click (code = -1) không có click nào.
-        return np.where(codes >= 0, counts, 0)
 
 
 def run_baselines(config: BaselineConfig) -> None:
@@ -72,15 +40,14 @@ def run_baselines(config: BaselineConfig) -> None:
 def _run(config: BaselineConfig, run_dir: Path) -> None:
     data_cfg = config.data
     logs = {
-        "train": read_impression_log(data_cfg.train_behaviors),
         "val": read_impression_log(data_cfg.val_behaviors),
         "test": read_impression_log(data_cfg.test_behaviors),
     }
-    clicks = ClickCounter(pd.concat(logs.values(), ignore_index=True))
+    clicks = ClickCounter(read_clicks(data_cfg.click_log))
     logger.info(
-        "Clicks: %d from %d impressions, popularity window=%dmin",
+        "Clicks: %d from %s, popularity window=%dmin",
         clicks.num_clicks,
-        sum(len(log) for log in logs.values()), 
+        data_cfg.click_log,
         config.popularity_window_minutes,
     )
 

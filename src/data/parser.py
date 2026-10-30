@@ -5,10 +5,14 @@ import pandas as pd
 from src.data.constants import (
     BEHAVIORS_COLUMNS,
     CANDIDATES_COLUMN,
+    CLICK_EVENT_ID,
     HISTORY_COLUMN,
     IMPRESSION_ID_COLUMN,
     IMPRESSIONS_COLUMN,
     LABELS_COLUMN,
+    LOG_EVENT_ID_COLUMN,
+    LOG_TIME_COLUMN,
+    LOG_TIME_ZONE,
     NEWS_CATEGORY_COLUMN,
     NEWS_ID_COLUMN,
     TIME_COLUMN,
@@ -43,7 +47,8 @@ def read_behaviors(file_path: Path) -> pd.DataFrame:
     df[HISTORY_COLUMN] = (
         df[HISTORY_COLUMN].fillna("").apply(lambda x: [int(item) for item in x.split()])
     )
-    return df.drop(columns=TIME_COLUMN)
+    df[TIME_COLUMN] = pd.to_datetime(df[TIME_COLUMN], format=TIME_FORMAT)
+    return df
 
 
 def read_impression_log(file_path: Path) -> pd.DataFrame:
@@ -58,6 +63,26 @@ def read_impression_log(file_path: Path) -> pd.DataFrame:
     _split_impressions(df, file_path)
     df[TIME_COLUMN] = pd.to_datetime(df[TIME_COLUMN], format=TIME_FORMAT)
     return df
+
+
+def read_clicks(log_dir: Path) -> pd.DataFrame:
+    """newsId (int64) and time (local datetime) of every click in the cleaned event log."""
+    df = pd.read_parquet(
+        log_dir,
+        columns=[NEWS_ID_COLUMN, LOG_TIME_COLUMN],
+        filters=[(LOG_EVENT_ID_COLUMN, "==", CLICK_EVENT_ID)],
+    )
+    # News ids of the behaviors files are integers; other ids can never be a candidate.
+    df = df[df[NEWS_ID_COLUMN].str.fullmatch(r"\d+")]
+    return pd.DataFrame(
+        {
+            NEWS_ID_COLUMN: df[NEWS_ID_COLUMN].astype("int64").to_numpy(),
+            TIME_COLUMN: pd.to_datetime(df[LOG_TIME_COLUMN], unit="ms", utc=True)
+            .dt.tz_convert(LOG_TIME_ZONE)
+            .dt.tz_localize(None)
+            .to_numpy(),
+        }
+    )
 
 
 def read_news(file_path: Path, text_columns: list[str]) -> pd.DataFrame:

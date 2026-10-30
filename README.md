@@ -9,6 +9,15 @@ Mỗi bài báo có 4 view: `title`, `sapo`, `tags` (văn bản) và `category`.
 - User vector là news-level attention trên lịch sử click; điểm click là tích vô hướng.
 - Huấn luyện bằng 1 tin dương + K tin âm lấy trong cùng impression.
 
+Config mặc định dùng biến thể **`naml_popularity`**: cộng thêm vào điểm NAML một nhánh popularity theo thời gian thực.
+- `c_i`: số click vào candidate `i` trong cửa sổ 15 phút ngay trước impression.
+- `c̃_i = log(1 + c_i) − mean_j log(1 + c_j)`: độ hot tương đối so với các candidate khác trong cùng impression.
+- `t = [sin(2πh/24), cos(2πh/24)]`, với `h` là giờ của impression (giờ + phút/60).
+- `q_i = MLP([t, Linear(u), c̃_i])`: thời điểm, user và độ hot được kết hợp đồng thời, nên mỗi user và mỗi thời điểm có một cách dùng popularity riêng.
+- Điểm cuối: `s_i = u·n_i + q_i`.
+
+Đặt `model.name: naml` (và bỏ hai trường `popularity_*`) để train NAML gốc.
+
 ## Cấu trúc
 
 ```
@@ -20,79 +29,103 @@ src/engine/         # vòng train (accelerate), evaluate + metric (torchmetrics)
 src/utils/          # tiện ích dùng chung: config loader, I/O, quy chuẩn run (run.py)
 ```
 
-## Cài đặt môi trường
+## Cài đặt và chạy
 
 Môi trường đã được kiểm tra:
 
 | Thành phần | Phiên bản |
 |---|---|
 | Python | **3.12** (bắt buộc ≥ 3.11 vì `numpy 2.5`, `pandas 3.0`) |
-| torch | 2.13.0 (CUDA 12.6 trên máy dev; xem bên dưới cho GPU đời mới) |
+| torch | 2.13.0 (cài riêng, không có trong `requirement.txt`) |
 | accelerate / torchmetrics / matplotlib | 1.15.0 / 1.9.0 / 3.11.1 |
 | Các thư viện khác | đã pin trong `requirement.txt` |
 
-### Các bước trên máy GPU (Linux, ví dụ máy thuê)
+Dữ liệu tải về là bản **đã tiền xử lý** (`data/processed/real_data_fasttext_v3`, đã gồm `embedding.npy` và popularity của từng candidate). Vì vậy không cần file fastText 4,5GB và không phải chạy lại bước [tiền xử lý](#1-tiền-xử-lý) trước khi train.
 
-**1. Kiểm tra driver và CUDA**
+### Linux (ví dụ máy GPU thuê)
+
+**1. Clone repo**
 
 ```bash
-nvidia-smi
+git clone https://github.com/dinhtrieuxtnd/NAML.git
+cd NAML
 ```
 
-Xem dòng `CUDA Version` ở góc trên bên phải. Dòng này cho biết phiên bản CUDA cao nhất mà driver hỗ trợ. Chọn bản build torch theo số này:
+**2. Tạo môi trường Python 3.12**
 
-| `CUDA Version` trong `nvidia-smi` | Bản torch cần cài | GPU dùng được |
+Image của máy thuê thường chỉ có Python 3.10, mà Python 3.10 **không** cài được `requirement.txt`.
+
+```bash
+sudo apt install python3.12 python3.12-venv
+python3.12 -m venv venv
+source venv/bin/activate
+```
+
+Các bước sau đều chạy trong môi trường này (dòng lệnh có tiền tố `(venv)`).
+
+**3. Cài torch, sau đó mới cài phần còn lại**
+
+Xem dòng `CUDA Version` ở góc trên bên phải của `nvidia-smi` để chọn bản torch:
+
+| `CUDA Version` trong `nvidia-smi` | Bản torch | GPU dùng được |
 |---|---|---|
 | ≥ 13.0 | `cu130` | Mọi GPU, kể cả RTX 50xx |
 | 12.9 | `cu129` | Mọi GPU, kể cả RTX 50xx |
-| 12.6 – 12.8 | `cu126` | Chỉ RTX 30xx/40xx (ví dụ 3090 Ti) |
-
-**RTX 50xx** (ví dụ 5060 Ti, kiến trúc Blackwell `sm_120`) bắt buộc dùng `cu129` hoặc mới hơn. Nếu máy thuê có 5060 Ti mà `nvidia-smi` chỉ hiện CUDA ≤ 12.8 thì driver quá cũ, nên đổi sang máy khác.
-
-**2. Tạo môi trường Python**
-
-Nên dùng python 3.12 với RTX 30xx/40xx. Link: https://www.python.org/ftp/python/3.12.16/Python-3.12.16.tar.xz
-Dùng python 3.14 với RTX 50xx. Link: https://www.python.org/ftp/python/3.14.9/Python-3.14.9.tar.xz
-Python 3.15 mới nhật hiện chưa tương thích với 1 vài phiên bản thư viện trong `requirement.txt`.
-
-**3. Cài các thư viện**
-
-Cài các thư viện trong `requirement.txt` (đã pin phiên bản) và cài torch riêng
+| 12.6 – 12.8 | `cu126` | Chỉ RTX 30xx/40xx |
 
 ```bash
+# đổi cu126 theo bảng trên (torch 2.13.0 không có bản cu128)
+pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cu126
 pip install -r requirement.txt
 ```
 
+Kiểm tra torch thấy GPU. Lệnh phải in `True` và tên GPU, không báo lỗi:
+
 ```bash
-pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 ```
 
-**4. Kiểm tra torch thấy GPU**
+**4. Tải và giải nén dữ liệu**
 
 ```bash
-python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available(), torch.cuda.get_device_name(0)); torch.ones(1, device='cuda')"
+pip install gdown
+gdown "https://drive.google.com/file/d/1xldSpS63doRgA94rRoSjFgY-Iwy2CMpJ/view?usp=sharing"
+sudo apt install unrar
+unrar x data.rar data/processed
 ```
 
-Lệnh phải in `True` và tên GPU, không báo lỗi.
+Sau khi giải nén phải có thư mục `data/processed/real_data_fasttext_v3/`, đúng với `data.processed_dir` trong `configs/train.yaml`.
 
-**5. Chép dữ liệu đã tiền xử lý lên máy**
-
-Thư mục `data/` không có trên git. Chép bản đã tiền xử lý (khoảng 220MB, đã gồm `embedding.npy`) từ máy local, giữ đúng đường dẫn:
+**5. Smoke test, train, đánh giá**
 
 ```bash
-# chạy trên máy local, từ thư mục gốc của repo
-scp -P <port> -r data/processed/real_data_fasttext_v1 <user>@<host>:<đường-dẫn-repo>/data/processed/
-```
-
-Train không đọc file `.vec`, nên không cần chép file fastText 4,5GB và không phải chạy lại tiền xử lý trên máy thuê.
-
-**6. Chạy smoke test trên GPU trước khi train thật**
-
-```bash
+# kiểm tra môi trường, chạy dưới 1 phút
 python -m scripts.train --config configs/train_smoke.yaml
+# train thật
+python -m scripts.train --config configs/train.yaml
+# đánh giá checkpoint tốt nhất trên tập test
+python -m scripts.evaluate --checkpoint outputs/<run>/checkpoints/best
 ```
 
-Smoke test chạy dưới 1 phút. Nếu nó in 3 dòng `epoch=...` và `train completed` thì môi trường đã sẵn sàng.
+Smoke test in vài dòng `epoch=...` và `train completed` là môi trường đã sẵn sàng. Chi tiết từng bước xem [Train](#2-train) và [Đánh giá](#3-đánh-giá-trên-tập-test).
+
+### Windows
+
+1. **Cài Python 3.12:** tải bộ cài từ [python.org/downloads](https://www.python.org/downloads/). Ở màn hình đầu tiên của bộ cài, **tick ô "Add python.exe to PATH"** rồi bấm *Install Now*.
+2. **Tải code:** trên trang GitHub của repo, bấm nút **Code → Download ZIP**, rồi giải nén ra một thư mục, ví dụ `D:\NAML`.
+3. **Tải dữ liệu:** mở [link Google Drive](https://drive.google.com/file/d/1xldSpS63doRgA94rRoSjFgY-Iwy2CMpJ/view?usp=sharing) bằng trình duyệt và bấm **Download**. Giải nén `data.rar` bằng WinRAR hoặc 7-Zip (chuột phải → *Extract files…*) vào thư mục `data\processed` bên trong thư mục code. Kết quả phải có `D:\NAML\data\processed\real_data_fasttext_v3\`.
+4. **Mở terminal:** mở thư mục code bằng VS Code (*File → Open Folder…*), rồi chọn *Terminal → New Terminal*.
+5. **Cài thư viện:** chạy lần lượt trong terminal:
+   ```bash
+   py -3.12 -m venv venv
+   venv\Scripts\activate
+   pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cu126
+   pip install -r requirement.txt
+   ```
+   Nếu VS Code hỏi *"We noticed a new environment has been created…"* thì bấm **Yes** để dùng môi trường `venv` này.
+6. **Chạy:** dùng đúng các lệnh ở bước 5 của phần Linux.
+
+Trên Windows nên đặt `data.num_workers: 0` trong config nếu gặp lỗi hoặc thấy DataLoader khởi động chậm.
 
 ### Lỗi thường gặp
 
@@ -100,9 +133,10 @@ Smoke test chạy dưới 1 phút. Nếu nó in 3 dòng `epoch=...` và `train c
 |---|---|---|
 | `Could not find a version that satisfies the requirement numpy==2.5.1` (hoặc `pandas==3.0.5`) | Python < 3.11 | Tạo môi trường Python 3.12 (bước 2) |
 | `no kernel image is available for execution on the device` / `sm_120 is not compatible with the current PyTorch installation` | torch build CUDA cũ trên RTX 50xx | `pip uninstall -y torch` rồi cài lại bản `cu129`/`cu130` (bước 3) |
-| `torch.cuda.is_available()` trả về `False` | Cài nhầm torch bản CPU, hoặc bản build cần CUDA mới hơn driver hỗ trợ | Cài lại torch theo bảng ở bước 1 và bước 3 |
+| `torch.cuda.is_available()` trả về `False` | Cài nhầm torch bản CPU, hoặc bản build cần CUDA mới hơn driver hỗ trợ | Cài lại torch theo bảng ở bước 3 |
 | `No matching distribution found for torch==2.13.0` khi dùng `--index-url .../cu128` | Không có torch 2.13.0 bản cu128 | Dùng `cu129`, `cu130` hoặc `cu126` |
-| `processed_dir ... Path does not point to a directory` | Chưa chép dữ liệu | Bước 5 |
+| `processed_dir ... Path does not point to a directory` | Chưa giải nén dữ liệu, hoặc giải nén sai chỗ | Bước 4: phải có `data/processed/real_data_fasttext_v3/` |
+| `KeyError: 'popularity'` (hoặc `'hour'`) | `processed_dir` trỏ tới bản dữ liệu cũ (v1, v2) không có popularity | Dùng `real_data_fasttext_v3`, hoặc chạy lại tiền xử lý |
 | `Bus error` / `DataLoader worker ... killed` / `unable to write to file </torch_...>` | Docker cấp `/dev/shm` quá nhỏ | Đặt `data.num_workers: 0` trong config, hoặc tạo container với `--shm-size=8g` |
 | `CUDA out of memory` | Batch quá lớn so với VRAM | Giảm `data.train_batch_size`, tăng `trainer.gradient_accumulation_steps` để giữ batch hiệu dụng; hoặc giảm `data.history_len` |
 | `Cannot resume ...: config differs in ...` | Đổi trường cố định khi resume | Giữ nguyên các trường được liệt kê (xem [Resume](#resume)) |
@@ -120,6 +154,7 @@ Smoke test chạy dưới 1 phút. Nếu nó in 3 dòng `epoch=...` và `train c
   ```bash
   mklink data\raw\fasttext\cc.vi.300.vec <đường-dẫn-tới>\cc.vi.300.vec
   ```
+- `create_data/raw_log_cleaned/`: log sự kiện đã làm sạch (parquet), dùng để đếm click cho popularity (eventId 2, theo giờ click thật `clientTime`). Chỉ đọc, không sửa.
 
 Ba tập train/val/test phải được chia sẵn theo thời gian, và lịch sử của mỗi impression chỉ gồm các click trước thời điểm impression. Pipeline không kiểm tra lại các điều kiện này.
 
@@ -155,19 +190,21 @@ Toàn bộ bước này mất khoảng 1–2 phút.
   - Nếu vẫn không có thì khởi tạo theo `N(0, embedding.unmatched_init_std)`.
   - Hàng `<PAD>` bằng 0.
 - **Lịch sử click:** bỏ tin trùng, giữ lần click gần nhất.
+- **Popularity:** với mỗi impression, đếm click vào từng candidate trong `popularity.window_minutes` phút ngay trước thời điểm impression, chỉ lấy click xảy ra trước đó nên không rò rỉ tương lai. Sau đó tính `c̃` trên **toàn bộ** candidate của impression, trước khi lấy mẫu tin âm, để train và evaluate dùng cùng một giá trị. Giờ của impression cũng được lưu vào mẫu.
 
 Kết quả ghi vào `data/processed/<run.name>/`:
 
 - `artifacts/`:
   - token matrix cho từng view (`title.npy`, ...);
   - `vocab.json`, `embedding.npy`;
-  - mẫu `{train,val,test}_samples.pkl`;
+  - mẫu `{train,val,test}_samples.pkl`, kèm popularity của từng candidate và giờ của impression;
   - mapping `newsId → row` và category.
 - `statistics.json`:
   - kích thước vocab;
   - độ phủ embedding theo loại từ (~89%) và theo token (~99,7%);
   - phân bố độ dài theo âm tiết (`p95`, tỉ lệ bị cắt), dùng để chỉnh `text.max_length`;
-  - số mẫu và số click trùng đã bỏ.
+  - số mẫu và số click trùng đã bỏ;
+  - số candidate và số candidate không có click nào trong cửa sổ (khoảng 32%).
 - `config.yaml`, `run_info.json`, `preprocess.log`.
 
 Nếu thư mục output đã tồn tại thì script báo lỗi. Đặt `run.overwrite: true` để ghi đè.
@@ -252,9 +289,9 @@ python -m scripts.baselines --config configs/baselines.yaml
 ```
 
 - `random`: điểm ngẫu nhiên cho mỗi candidate (seed cố định).
-- `popularity`: số click vào candidate trong `popularity_window_minutes` phút ngay trước thời điểm impression. Click được đếm từ log impression thô của cả ba split, nhưng chỉ lấy click xảy ra trước impression, nên không rò rỉ tương lai. Hoà điểm được phá ngẫu nhiên.
+- `popularity`: số click vào candidate trong `popularity_window_minutes` phút ngay trước thời điểm impression. Click được đếm từ log sự kiện đã làm sạch (`click_log`, eventId 2) theo giờ click thật `clientTime`, chỉ lấy click xảy ra trước impression, nên không rò rỉ tương lai. Không đếm từ behaviors CSV vì ở đó mọi click của một session đều mang giờ bắt đầu session. Hoà điểm được phá ngẫu nhiên.
 
-Baseline cần thời gian impression, mà dữ liệu processed không lưu, nên config trỏ thêm tới các file behaviors thô đã dùng để tạo `processed_dir`. Kết quả ghi vào `outputs/<run.name>_<timestamp>/metrics.json` theo dạng `{split: {baseline: {metric: value}}}`. Baseline không train gì nên được chấm cả val và test. `popularity_window_minutes` chỉ nên chọn theo val.
+Baseline cần thời gian chính xác của impression, mà dữ liệu processed chỉ lưu giờ trong ngày, nên config trỏ thêm tới các file behaviors val/test thô đã dùng để tạo `processed_dir`. Nên giữ `popularity_window_minutes` bằng `popularity.window_minutes` của `configs/preprocess.yaml`, để baseline và model dùng cùng cửa sổ. Kết quả ghi vào `outputs/<run.name>_<timestamp>/metrics.json` theo dạng `{split: {baseline: {metric: value}}}`. Baseline không train gì nên được chấm cả val và test. `popularity_window_minutes` chỉ nên chọn theo val.
 
 ## Config chính
 
@@ -262,6 +299,10 @@ Baseline cần thời gian impression, mà dữ liệu processed không lưu, n�
 |---|---|
 | `text.max_length.{title,sapo,tags}` | Độ dài tối đa (số token âm tiết) của từng view, chỉnh theo `p95` trong `statistics.json` |
 | `embedding.unmatched_init_std` | Độ lệch chuẩn khởi tạo cho token không có trong fastText |
+| `popularity.window_minutes` | Cửa sổ đếm click cho popularity lúc tiền xử lý (15 phút, tốt nhất trên val); đổi thì phải tiền xử lý lại |
+| `model.name` | `naml_popularity` (mặc định) hoặc `naml` (NAML gốc) |
+| `model.popularity_user_dim` | Số chiều của user sau khi chiếu, trước khi ghép với thời điểm và popularity |
+| `model.popularity_hidden_dim` | Số chiều lớp ẩn của MLP popularity |
 | `data.history_len` | Số tin gần nhất trong lịch sử được dùng (sau khi bỏ tin trùng) |
 | `data.num_negatives` | K tin âm mỗi mẫu dương (thiếu thì lấy lặp lại) |
 | `data.max_train_samples` / `data.max_eval_impressions` | Giới hạn số mẫu train / impression val-test, dùng cho smoke test (`null` = toàn bộ) |
@@ -280,7 +321,7 @@ Thêm model hoặc loss mới: viết module trong `src/models/`, thêm config P
 
 ## Smoke test
 
-Chạy sau mỗi thay đổi trong `src/` hoặc `configs/`. Lệnh dưới train 3 epoch trên 64 mẫu và đánh giá val trên 20 impression; early stopping (`patience` 1) thường dừng ở epoch 3. Không cần GPU mạnh:
+Chạy sau mỗi thay đổi trong `src/` hoặc `configs/`. Lệnh dưới train tối đa 3 epoch trên 64 mẫu và đánh giá val trên 20 impression; early stopping (`patience` 1) có thể dừng sớm hơn. Không cần GPU mạnh:
 
 ```bash
 python -m scripts.train --config configs/train_smoke.yaml

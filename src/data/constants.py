@@ -19,9 +19,24 @@ LABELS_COLUMN = "labels"
 # Train sample keys, besides impression_id / user_id / history.
 NEGATIVE_POOL_KEY = "negative_pool"
 POSITIVE_ITEM_KEY = "positive_item"
+# Relative popularity (log1p(clicks) - impression mean) of the positive / of each negative_pool item.
+POSITIVE_POPULARITY_KEY = "positive_popularity"
+NEGATIVE_POOL_POPULARITY_KEY = "negative_pool_popularity"
+
+# Keys of every sample and batch: relative popularity of each candidate (eval samples) and
+# hour of day of the impression (hour + minute / 60).
+POPULARITY_KEY = "popularity"
+HOUR_KEY = "hour"
 
 NEWS_ID_COLUMN = "newsId"
 NEWS_CATEGORY_COLUMN = "category"
+
+# Cleaned event log (parquet): one row per event, newsId shares NEWS_ID_COLUMN.
+LOG_TIME_COLUMN = "clientTime"
+LOG_EVENT_ID_COLUMN = "eventId"
+CLICK_EVENT_ID = 2
+# clientTime is in ms (UTC); behaviors TIME_COLUMN is local time in this zone.
+LOG_TIME_ZONE = "Asia/Ho_Chi_Minh"
 
 # Row 0 of every news token matrix is the padding news.
 NEWS_PAD_IDX = 0

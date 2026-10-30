@@ -1,13 +1,10 @@
 __pycache__/
 notebooks/
 /data
-server/
-raw_log
 .env
 create_data
 outputs/
 schema.txt
-CLAUDE.md
 .claude/
 .ruff_cache/
 docs/
